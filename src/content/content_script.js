@@ -342,6 +342,9 @@ function showAutoSuggestHint(element) {
     saveSelectedBlocksToStorage();
     hint.remove();
 
+    // 切换到手动模式，允许取消和追加选择
+    currentMode = SELECTION_MODE.MANUAL;
+
     // 打开 sidePanel
     chrome.sidePanel.openPanel().catch(() => {});
   });
