@@ -1,4 +1,5 @@
 // src/content/content_script.js
+// Readability.js integration for auto content detection
 
 // Constants (inlined to avoid ES module import issues in content scripts)
 const SELECTION_MODE = {
@@ -19,6 +20,93 @@ const STORAGE_KEYS = {
   PAGE_URL: 'page_url',
   EXTRACTION_TIME: 'extraction_time'
 };
+
+// ============================================================
+// Readability.js core functions (inlined to avoid ES module import issues)
+// ============================================================
+
+function parseDocument(document) {
+  const article = findArticleElement(document);
+  if (!article) return null;
+
+  return {
+    title: document.title || getTitleFromH1(document) || 'Untitled',
+    content: extractContent(article),
+    textContent: article.innerText,
+    length: article.innerText.length,
+    excerpt: getExcerpt(article),
+    byline: getByline(article),
+    siteName: document.domain
+  };
+}
+
+function findArticleElement(document) {
+  // 优先查找 article 标签
+  const article = document.querySelector('article');
+  if (article && article.innerText.length > 100) return article;
+
+  // 查找 main 或 role="main"
+  const main = document.querySelector('main');
+  if (main && main.innerText.length > 100) return main;
+
+  const roleMain = document.querySelector('[role="main"]');
+  if (roleMain && roleMain.innerText.length > 100) return roleMain;
+
+  // 查找最大文本块
+  const candidates = document.querySelectorAll('div, section');
+  let best = null;
+  let bestLength = 0;
+
+  for (const candidate of candidates) {
+    const text = candidate.innerText.trim();
+    // 过滤导航栏和明显非正文内容
+    if (text.length > bestLength && !isNoise(candidate)) {
+      bestLength = text.length;
+      best = candidate;
+    }
+  }
+
+  return best && bestLength > 200 ? best : null;
+}
+
+function isNoise(element) {
+  const classAndId = (element.className + ' ' + element.id).toLowerCase();
+  const noisePatterns = ['nav', 'menu', 'sidebar', 'comment', 'footer', 'header', 'advertisement', 'social', 'share', 'related'];
+  return noisePatterns.some(p => classAndId.includes(p));
+}
+
+function extractContent(element) {
+  // 克隆并清理
+  const clone = element.cloneNode(true);
+  // 移除脚本和样式
+  clone.querySelectorAll('script, style, noscript, iframe, form').forEach(el => el.remove());
+  return clone.innerHTML;
+}
+
+function getTitleFromH1(document) {
+  const h1 = document.querySelector('h1');
+  return h1 ? h1.innerText.trim() : null;
+}
+
+function getByline(element) {
+  // 查找常见的作者信息
+  const bylineSelectors = ['.author', '.byline', '[rel="author"]', '.writer'];
+  for (const selector of bylineSelectors) {
+    const el = element.querySelector(selector);
+    if (el) return el.innerText.trim();
+  }
+  return null;
+}
+
+function getExcerpt(element) {
+  const text = element.innerText.trim();
+  // 取前 200 字符作为摘要
+  return text.substring(0, 200) + (text.length > 200 ? '...' : '');
+}
+
+// ============================================================
+// End Readability.js core functions
+// ============================================================
 
 let currentMode = SELECTION_MODE.INACTIVE;
 let selectedBlocks = [];
@@ -51,8 +139,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 function startSelectionMode() {
-  currentMode = SELECTION_MODE.MANUAL;
-  injectNotificationBar();
+  // 尝试自动识别正文
+  const article = parseDocument(document);
+  const articleElement = article ? findMainContentElement(document) : null;
+
+  if (article && article.content && articleElement) {
+    // 自动模式
+    currentMode = SELECTION_MODE.AUTO;
+    injectNotificationBar();
+    articleElement.classList.add(HIGHLIGHT_STYLES.AUTO_SUGGEST);
+    showAutoSuggestHint(articleElement);
+  } else {
+    // 回退到手动模式
+    currentMode = SELECTION_MODE.MANUAL;
+    injectNotificationBar();
+  }
   setupMouseListeners();
 }
 
@@ -183,7 +284,59 @@ function clearAllHighlights() {
   document.querySelectorAll('.' + HIGHLIGHT_STYLES.SELECTED).forEach(el => {
     el.classList.remove(HIGHLIGHT_STYLES.SELECTED);
   });
+  document.querySelectorAll('.' + HIGHLIGHT_STYLES.AUTO_SUGGEST).forEach(el => {
+    el.classList.remove(HIGHLIGHT_STYLES.AUTO_SUGGEST);
+  });
+  // Remove auto hint if exists
+  const hint = document.getElementById('zhcp-auto-hint');
+  if (hint) hint.remove();
   selectedBlocks = [];
+}
+
+function findMainContentElement(doc) {
+  const selectors = ['article', 'main', '[role="main"]', '.post-content', '.article-content', '.entry-content'];
+  for (const selector of selectors) {
+    const el = doc.querySelector(selector);
+    if (el && el.innerText.length > 100) return el;
+  }
+  return null;
+}
+
+function showAutoSuggestHint(element) {
+  const existingHint = document.getElementById('zhcp-auto-hint');
+  if (existingHint) existingHint.remove();
+
+  const hint = document.createElement('div');
+  hint.id = 'zhcp-auto-hint';
+  hint.style.cssText = `
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #185FA5;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+    z-index: 2147483647;
+  `;
+  hint.textContent = '已识别正文，点击接受';
+  element.style.position = 'relative';
+  element.appendChild(hint);
+
+  hint.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // 接受自动识别结果
+    element.classList.remove(HIGHLIGHT_STYLES.AUTO_SUGGEST);
+    element.classList.add(HIGHLIGHT_STYLES.SELECTED);
+    if (!selectedBlocks.includes(element)) {
+      selectedBlocks.push(element);
+    }
+    saveSelectedBlocksToStorage();
+    hint.remove();
+  });
 }
 
 async function saveSelectedBlocksToFile() {
