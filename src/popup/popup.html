@@ -10,6 +10,13 @@
       --bg: #fff; --bg-sec: #F8F7F3;
       --border: rgba(60,58,50,0.12);
     }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --text: #E8E6DF; --text-sec: #B4B2A9;
+        --bg: #1C1B18; --bg-sec: #252420;
+        --border: rgba(210,205,190,0.1);
+      }
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; width: 280px; background: var(--bg); color: var(--text); font-size: 14px; }
     .header { padding: 16px; border-bottom: 1px solid var(--border); }

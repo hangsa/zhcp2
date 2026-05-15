@@ -19,7 +19,7 @@ let pageTitle = '';
 let pageUrl = '';
 
 document.getElementById('closeBtn').addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'CLOSE_SIDEPANEL' });
+  window.close();
 });
 
 document.getElementById('saveBtn').addEventListener('click', async () => {

@@ -11,6 +11,13 @@
       --green-50: #EAF3DE; --green-100: #C0DD97;
       --coral-50: #FAECE7; --coral-100: #F5C4B3;
     }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --text: #E8E6DF; --text-sec: #B4B2A9; --text-ter: #888780;
+        --bg: #1C1B18; --bg-sec: #252420; --bg-ter: #2C2B28;
+        --border: rgba(210,205,190,0.1); --border-med: rgba(210,205,190,0.18);
+      }
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: var(--bg); color: var(--text); font-size: 14px; }
     h1 { font-size: 20px; font-weight: 500; margin-bottom: 8px; }
