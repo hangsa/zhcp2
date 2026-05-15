@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      --blue-50: #E6F1FB; --blue-100: #B5D4F4; --blue-200: #85B7EB;
+      --blue-400: #378ADD; --blue-600: #185FA5;
+      --text: #2C2C2A; --text-sec: #5F5E5A;
+      --bg: #fff; --bg-sec: #F8F7F3;
+      --border: rgba(60,58,50,0.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; width: 280px; background: var(--bg); color: var(--text); font-size: 14px; }
+    .header { padding: 16px; border-bottom: 1px solid var(--border); }
+    .title { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+    .subtitle { font-size: 12px; color: var(--text-sec); }
+    .content { padding: 16px; }
+    .start-btn { width: 100%; padding: 10px 16px; background: var(--blue-600); color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+    .start-btn:hover { background: var(--blue-400); }
+    .status { margin-top: 12px; text-align: center; font-size: 12px; color: var(--text-sec); }
+    .shortcut { display: block; margin-top: 8px; font-size: 11px; color: var(--text-sec); text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">文本提取器</div>
+    <div class="subtitle">绕过复制限制，精准提取正文</div>
+  </div>
+  <div class="content">
+    <button class="start-btn" id="startBtn">开始选择</button>
+    <div class="status" id="status">点击按钮激活选择模式</div>
+    <span class="shortcut">快捷键：Alt+E</span>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
