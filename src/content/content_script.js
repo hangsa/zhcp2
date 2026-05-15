@@ -246,6 +246,11 @@ function handleClick(e) {
   }
 
   saveSelectedBlocksToStorage();
+
+  // 打开 sidePanel
+  chrome.sidePanel.openPanel().catch(() => {
+    // sidePanel 可能未启用，忽略错误
+  });
 }
 
 function findTextBlock(element) {
