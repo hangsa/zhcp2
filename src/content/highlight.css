@@ -1,0 +1,60 @@
+/* src/content/highlight.css */
+
+/* 悬停高亮：蓝色描边边框 */
+.highlight-hover {
+  outline: 2px solid #378ADD !important;
+  outline-offset: 2px;
+  cursor: crosshair !important;
+}
+
+/* 选中状态：浅蓝填充 + 虚线边框 */
+.highlight-selected {
+  background-color: #E8F0FE !important;
+  outline: 2px dashed #378ADD !important;
+  outline-offset: 2px;
+  cursor: pointer !important;
+}
+
+/* Readability 推荐区域：蓝色虚线框 */
+.highlight-auto-suggest {
+  outline: 2px dashed #378ADD !important;
+  outline-offset: 4px;
+  cursor: pointer !important;
+}
+
+/* 顶部提示条 */
+.mode-notification-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: #185FA5;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  z-index: 2147483647;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.mode-notification-bar.hidden {
+  display: none;
+}
+
+.mode-notification-bar .manual-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.mode-notification-bar .manual-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
