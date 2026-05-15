@@ -341,6 +341,9 @@ function showAutoSuggestHint(element) {
     }
     saveSelectedBlocksToStorage();
     hint.remove();
+
+    // 打开 sidePanel
+    chrome.sidePanel.openPanel().catch(() => {});
   });
 }
 

@@ -17,15 +17,9 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('saveBtn').addEventListener('click', async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
+  // 直接打开 sidePanel，由 sidePanel 处理保存逻辑
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'SAVE_TO_TXT' });
-    if (response.success) {
-      document.getElementById('status').textContent = '文件已保存';
-    } else {
-      document.getElementById('status').textContent = '请先选择内容';
-    }
+    await chrome.sidePanel.openPanel();
   } catch (err) {
     document.getElementById('status').textContent = '请先选择内容';
   }
