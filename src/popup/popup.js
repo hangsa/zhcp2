@@ -16,6 +16,21 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, { type: 'SAVE_TO_TXT' });
+    if (response.success) {
+      document.getElementById('status').textContent = '文件已保存';
+    } else {
+      document.getElementById('status').textContent = '请先选择内容';
+    }
+  } catch (err) {
+    document.getElementById('status').textContent = '请先选择内容';
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SELECTION_STOPPED') {
     document.getElementById('startBtn').textContent = '开始选择';
