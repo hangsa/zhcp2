@@ -10,6 +10,15 @@
     "sidePanel"
   ],
   "host_permissions": ["<all_urls>"],
+  "commands": {
+    "toggle-selection": {
+      "suggested_key": {
+        "default": "Alt+E",
+        "mac": "Alt+E"
+      },
+      "description": "开启/关闭选择模式"
+    }
+  },
   "action": {
     "default_popup": "src/popup/popup.html",
     "default_icon": {
