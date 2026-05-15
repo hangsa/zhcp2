@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "文本提取器",
+  "version": "0.1.0",
+  "description": "绕过付费内容复制限制，精准提取正文保存为 TXT",
+  "permissions": [
+    "storage",
+    "downloads",
+    "activeTab",
+    "sidePanel"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content_script.js"],
+      "css": ["src/content/highlight.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "side_panel": {
+    "default_path": "src/sidebar/sidebar.html"
+  }
+}
