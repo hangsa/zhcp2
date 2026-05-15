@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文本提取插件 · 完整产品方案</title>
+<style>
+  :root {
+    --blue-50: #E6F1FB; --blue-100: #B5D4F4; --blue-200: #85B7EB;
+    --blue-400: #378ADD; --blue-600: #185FA5; --blue-800: #0C447C; --blue-900: #042C53;
+    --teal-50: #E1F5EE; --teal-100: #9FE1CB; --teal-200: #5DCAA5;
+    --teal-600: #0F6E56; --teal-800: #085041;
+    --amber-50: #FAEEDA; --amber-100: #FAC775; --amber-200: #EF9F27;
+    --amber-600: #854F0B; --amber-800: #633806;
+    --coral-50: #FAECE7; --coral-100: #F5C4B3; --coral-200: #F0997B;
+    --coral-600: #993C1D; --coral-800: #712B13;
+    --purple-50: #EEEDFE; --purple-100: #CECBF6; --purple-200: #AFA9EC;
+    --purple-600: #534AB7; --purple-800: #3C3489;
+    --gray-50: #F1EFE8; --gray-100: #D3D1C7; --gray-200: #B4B2A9;
+    --gray-400: #888780; --gray-600: #5F5E5A; --gray-800: #444441;
+    --green-50: #EAF3DE; --green-100: #C0DD97; --green-200: #97C459;
+    --green-600: #3B6D11; --green-800: #27500A;
+    --text: #2C2C2A; --text-sec: #5F5E5A; --text-ter: #888780;
+    --bg: #fff; --bg-sec: #F8F7F3; --bg-ter: #F1EFE8;
+    --border: rgba(60,58,50,0.12); --border-med: rgba(60,58,50,0.22);
+    --radius: 10px; --radius-lg: 16px;
+    --font: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --text: #E8E6DF; --text-sec: #B4B2A9; --text-ter: #888780;
+      --bg: #1C1B18; --bg-sec: #252420; --bg-ter: #2C2B28;
+      --border: rgba(210,205,190,0.1); --border-med: rgba(210,205,190,0.18);
+      --blue-50: #042C53; --blue-100: #0C447C; --blue-200: #185FA5;
+      --blue-400: #378ADD; --blue-600: #85B7EB; --blue-800: #B5D4F4;
+      --teal-50: #04342C; --teal-100: #085041; --teal-200: #0F6E56;
+      --teal-600: #5DCAA5; --teal-800: #9FE1CB;
+      --amber-50: #412402; --amber-100: #633806; --amber-200: #854F0B;
+      --amber-600: #EF9F27; --amber-800: #FAC775;
+      --coral-50: #4A1B0C; --coral-100: #712B13; --coral-200: #993C1D;
+      --coral-600: #F0997B; --coral-800: #F5C4B3;
+      --purple-50: #26215C; --purple-100: #3C3489; --purple-200: #534AB7;
+      --purple-600: #AFA9EC; --purple-800: #CECBF6;
+      --gray-50: #2C2C2A; --gray-100: #444441; --gray-200: #5F5E5A;
+      --gray-600: #B4B2A9; --gray-800: #D3D1C7;
+      --green-50: #173404; --green-100: #27500A; --green-200: #3B6D11;
+      --green-600: #97C459; --green-800: #C0DD97;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.7; }
+  .page { max-width: 860px; margin: 0 auto; padding: 48px 32px 80px; }
+
+  .cover { border-bottom: 0.5px solid var(--border-med); padding-bottom: 40px; margin-bottom: 48px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 500; letter-spacing: 0.06em; padding: 4px 10px; border-radius: 20px; margin-bottom: 16px; background: var(--blue-50); color: var(--blue-800); border: 0.5px solid var(--blue-200); text-transform: uppercase; }
+  h1 { font-size: 30px; font-weight: 500; color: var(--text); margin-bottom: 10px; }
+  .cover-sub { color: var(--text-sec); font-size: 15px; }
+  .cover-meta { display: flex; gap: 24px; margin-top: 24px; flex-wrap: wrap; }
+  .meta-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-ter); }
+  .meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue-400); }
+
+  h2 { font-size: 20px; font-weight: 500; margin: 48px 0 20px; color: var(--text); padding-bottom: 10px; border-bottom: 0.5px solid var(--border); }
+  h3 { font-size: 15px; font-weight: 500; margin: 24px 0 10px; color: var(--text); }
+  p { color: var(--text-sec); margin-bottom: 12px; }
+
+  .section { margin-bottom: 48px; }
+
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 20px 0; }
+  .card { background: var(--bg-sec); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; }
+  .card-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; font-size: 16px; }
+  .card h3 { font-size: 14px; margin: 0 0 6px; }
+  .card p { font-size: 13px; margin: 0; }
+
+  .layer-stack { display: flex; flex-direction: column; gap: 0; margin: 20px 0; border-radius: var(--radius-lg); overflow: hidden; border: 0.5px solid var(--border-med); }
+  .layer { padding: 20px 24px; border-bottom: 0.5px solid var(--border); display: grid; grid-template-columns: 180px 1fr auto; gap: 16px; align-items: start; }
+  .layer:last-child { border-bottom: none; }
+  .layer-label { display: flex; align-items: center; gap: 10px; }
+  .layer-badge { font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
+  .layer-name { font-size: 14px; font-weight: 500; }
+  .layer-desc { font-size: 13px; color: var(--text-sec); line-height: 1.6; }
+  .layer-tag { font-size: 12px; padding: 3px 10px; border-radius: 20px; border: 0.5px solid var(--border-med); color: var(--text-ter); white-space: nowrap; }
+
+  .flow { margin: 24px 0; }
+  .flow-steps { display: flex; flex-direction: column; gap: 0; }
+  .flow-step { display: flex; gap: 16px; padding: 16px 0; border-bottom: 0.5px solid var(--border); }
+  .flow-step:last-child { border-bottom: none; }
+  .step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; flex-shrink: 0; background: var(--blue-50); color: var(--blue-800); border: 0.5px solid var(--blue-200); }
+  .step-body h3 { font-size: 14px; margin: 3px 0 5px; }
+  .step-body p { font-size: 13px; margin: 0; }
+  .step-note { display: inline-block; font-size: 12px; margin-top: 6px; padding: 2px 8px; border-radius: 20px; background: var(--amber-50); color: var(--amber-800); border: 0.5px solid var(--amber-200); }
+
+  .feature-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  .feature-table th { text-align: left; font-weight: 500; font-size: 12px; color: var(--text-ter); text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 12px; background: var(--bg-sec); border-bottom: 0.5px solid var(--border-med); }
+  .feature-table td { padding: 12px; border-bottom: 0.5px solid var(--border); vertical-align: top; color: var(--text-sec); }
+  .feature-table tr:last-child td { border-bottom: none; }
+  .p-badge { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 20px; }
+  .p0 { background: var(--coral-50); color: var(--coral-800); border: 0.5px solid var(--coral-200); }
+  .p1 { background: var(--amber-50); color: var(--amber-800); border: 0.5px solid var(--amber-200); }
+  .p2 { background: var(--gray-50); color: var(--gray-800); border: 0.5px solid var(--gray-200); }
+
+  .tech-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 20px 0; }
+  .tech-card { background: var(--bg-sec); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+  .tech-card .module { font-size: 12px; color: var(--text-ter); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .tech-card .choice { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+  .tech-card .reason { font-size: 12px; color: var(--text-sec); }
+
+  .risk-list { margin: 16px 0; display: flex; flex-direction: column; gap: 10px; }
+  .risk-item { display: flex; gap: 12px; padding: 14px 16px; border-radius: var(--radius); border: 0.5px solid var(--border); background: var(--bg-sec); }
+  .risk-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .risk-body .risk-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  .risk-body .risk-desc { font-size: 13px; color: var(--text-sec); }
+
+  .roadmap { display: flex; flex-direction: column; gap: 16px; margin: 20px 0; }
+  .milestone { display: grid; grid-template-columns: 100px 1fr; gap: 16px; }
+  .ms-time { font-size: 13px; color: var(--text-ter); padding-top: 2px; }
+  .ms-card { background: var(--bg-sec); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .ms-title { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+  .ms-items { font-size: 13px; color: var(--text-sec); }
+  .ms-items li { margin-bottom: 3px; list-style: none; padding-left: 12px; position: relative; }
+  .ms-items li::before { content: '·'; position: absolute; left: 0; color: var(--text-ter); }
+
+  .ai-strategy { margin: 20px 0; border: 0.5px solid var(--border-med); border-radius: var(--radius-lg); overflow: hidden; }
+  .ai-row { display: grid; grid-template-columns: 140px 1fr 80px; gap: 16px; padding: 16px 20px; border-bottom: 0.5px solid var(--border); align-items: center; font-size: 13px; }
+  .ai-row:last-child { border-bottom: none; }
+  .ai-row.header { background: var(--bg-sec); font-size: 12px; font-weight: 500; color: var(--text-ter); text-transform: uppercase; letter-spacing: 0.05em; padding: 10px 20px; }
+  .ai-tier { font-weight: 500; font-size: 14px; }
+  .ai-desc { color: var(--text-sec); }
+  .coverage { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 20px; text-align: center; }
+  .cov-hi { background: var(--green-50); color: var(--green-800); }
+  .cov-md { background: var(--amber-50); color: var(--amber-800); }
+  .cov-lo { background: var(--blue-50); color: var(--blue-800); }
+
+  .file-spec { background: var(--bg-ter); border-radius: var(--radius); padding: 16px 20px; margin: 16px 0; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; color: var(--text); border: 0.5px solid var(--border); white-space: pre-wrap; line-height: 1.8; }
+  .comment { color: var(--text-ter); }
+
+  .divider { border: none; border-top: 0.5px solid var(--border); margin: 40px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="badge">产品规划文档 v1.0</div>
+    <h1>文本提取浏览器插件</h1>
+    <p class="cover-sub">面向付费内容平台，绕过 CSS 复制限制，精准提取正文，本地保存为 TXT</p>
+    <div class="cover-meta">
+      <div class="meta-item"><div class="meta-dot"></div>目标平台：Chrome MV3 / Edge</div>
+      <div class="meta-item"><div class="meta-dot"></div>核心交互：点击 DOM 块选择</div>
+      <div class="meta-item"><div class="meta-dot"></div>AI 策略：三层分级识别</div>
+      <div class="meta-item"><div class="meta-dot"></div>开发周期：MVP 约 2–3 周</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>一、核心问题与解法</h2>
+    <p>付费内容平台通过 CSS <code>user-select: none</code> 或 JS 拦截事件阻止复制，但文字实际存在于 DOM 中。插件通过 <code>element.innerText</code> 直接读取文本节点，完全绕过前端限制。</p>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon" style="background:var(--blue-50)">🔒</div>
+        <h3>限制机制</h3>
+        <p>CSS user-select、JS mousedown 拦截、右键菜单禁用</p>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:var(--teal-50)">✂️</div>
+        <h3>突破方式</h3>
+        <p>content script 读取 innerText，不触发任何 UI 事件</p>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:var(--green-50)">🎯</div>
+        <h3>精准提取</h3>
+        <p>用户手动点选目标块，结合 AI 自动识别正文区域</p>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:var(--amber-50)">💾</div>
+        <h3>本地保存</h3>
+        <p>页面标题命名，一键下载 TXT，无需任何云端存储</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>二、AI 正文识别 · 三层分级架构</h2>
+    <p>AI 能力不是用来"找到正文在哪里"，而是分层降级，每层各司其职。用户最终的操作始终是主导，AI 负责减少手动操作量。</p>
+
+    <div class="ai-strategy">
+      <div class="ai-row header">
+        <div>层级</div><div>职责与触发时机</div><div>覆盖率</div>
+      </div>
+      <div class="ai-row">
+        <div class="ai-tier" style="color:var(--teal-800)">第一层<br><small style="font-weight:400;font-size:11px;color:var(--teal-600)">Readability.js</small></div>
+        <div class="ai-desc">
+          <strong style="color:var(--text);font-size:13px">自动识别正文区域（默认启动）</strong><br>
+          插件激活时，Mozilla Readability.js 自动解析页面，提取主文章容器，高亮显示推荐区域。用户只需确认，不需要手动点击。离线运行，零延迟，零成本，无隐私风险。
+        </div>
+        <div><span class="coverage cov-hi">~90%</span></div>
+      </div>
+      <div class="ai-row">
+        <div class="ai-tier" style="color:var(--blue-800)">第二层<br><small style="font-weight:400;font-size:11px;color:var(--blue-600)">手动点选</small></div>
+        <div class="ai-desc">
+          <strong style="color:var(--text);font-size:13px">用户精确指定（Readability 失败时）</strong><br>
+          第一层识别结果不满意时，用户进入手动模式：悬停段落自动高亮，点击锁定，支持多块叠加。这是产品核心交互，始终可用，不依赖任何外部服务。
+        </div>
+        <div><span class="coverage cov-md">100%</span></div>
+      </div>
+      <div class="ai-row">
+        <div class="ai-tier" style="color:var(--purple-800)">第三层<br><small style="font-weight:400;font-size:11px;color:var(--purple-600)">云端 LLM</small></div>
+        <div class="ai-desc">
+          <strong style="color:var(--text);font-size:13px">AI 清洗提炼（用户选中后可选触发）</strong><br>
+          对已选中的少量文本进行：去除版权声明/广告语、合并破碎段落、格式化输出。发送给 API 的是精简后的文本片段（非整页 HTML），隐私风险和 token 成本均可控。用户自填 API Key，插件不中转。
+        </div>
+        <div><span class="coverage cov-lo">可选</span></div>
+      </div>
+    </div>
+
+    <h3>第三层 API 调用设计原则</h3>
+    <div class="card-grid">
+      <div class="card">
+        <h3>最小数据原则</h3>
+        <p style="font-size:13px">只发送用户已选中的文本，不发送 HTML 结构、页面 URL 或 Cookie 信息</p>
+      </div>
+      <div class="card">
+        <h3>用户自主 API Key</h3>
+        <p style="font-size:13px">用户在设置页填入自己的 Key，直接调用 Anthropic/OpenAI，插件不做任何中转</p>
+      </div>
+      <div class="card">
+        <h3>明确提示词</h3>
+        <p style="font-size:13px">Prompt 固定为"清理格式，去除广告词，保留原文内容"，不让模型二次创作</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>三、功能优先级清单</h2>
+    <table class="feature-table">
+      <tr>
+        <th style="width:60px">优先级</th>
+        <th style="width:180px">功能</th>
+        <th>描述</th>
+        <th style="width:90px">依赖层级</th>
+      </tr>
+      <tr>
+        <td><span class="p-badge p0">P0</span></td>
+        <td>激活 / 退出选择模式</td>
+        <td>点击插件图标或按 Esc，页面顶部出现状态提示条</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p0">P0</span></td>
+        <td>Readability 自动识别</td>
+        <td>激活时自动推荐正文区域，蓝色边框高亮，可一键接受</td>
+        <td>第一层</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p0">P0</span></td>
+        <td>悬停高亮 + 点击选中</td>
+        <td>鼠标悬停任意块高亮，点击锁定，再次点击取消</td>
+        <td>第二层</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p0">P0</span></td>
+        <td>多块叠加选择</td>
+        <td>支持跨段落多次点击，按顺序合并</td>
+        <td>第二层</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p0">P0</span></td>
+        <td>保存为 TXT</td>
+        <td>自动命名为「页面标题_日期时间.txt」，触发浏览器下载</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p1">P1</span></td>
+        <td>侧边预览面板</td>
+        <td>右侧悬浮窗实时显示已选文本，支持删除某段、手动编辑</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p1">P1</span></td>
+        <td>AI 文本清洗（可选）</td>
+        <td>点击「AI 清洗」按钮，去除版权声明/广告语，格式化段落</td>
+        <td>第三层</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p1">P1</span></td>
+        <td>API Key 设置页</td>
+        <td>插件设置页填入 API Key，本地加密存储，从不上传</td>
+        <td>第三层</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p1">P1</span></td>
+        <td>快捷键激活</td>
+        <td>Alt+E 快速进入/退出选择模式</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p2">P2</span></td>
+        <td>历史记录</td>
+        <td>按日期归档已保存的提取文件，支持再次下载</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p2">P2</span></td>
+        <td>Markdown 格式输出</td>
+        <td>保存时可选 TXT 或 MD 格式</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><span class="p-badge p2">P2</span></td>
+        <td>iframe 内容支持</td>
+        <td>manifest 声明 all_frames 支持嵌套页面</td>
+        <td>—</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>四、核心交互流程</h2>
+    <div class="flow">
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h3>访问目标页面，点击插件图标</h3>
+            <p>页面顶部出现蓝色提示条「选择模式已开启」，Readability.js 后台解析正文</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3>自动推荐正文区域</h3>
+            <p>Readability 识别成功：主文章容器出现蓝色虚线框 + 提示「已识别正文，点击接受」</p>
+            <span class="step-note">⚡ 90% 的页面到这里就完成了</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h3>手动补充或修正（可选）</h3>
+            <p>用户不满意时，点击「手动选择」，鼠标悬停高亮段落，点击锁定；可在自动识别结果上叠加选择</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h3>预览与编辑</h3>
+            <p>右侧面板展示所有已选文本，支持删除某块、调整顺序；底部显示字数统计</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">5</div>
+          <div class="step-body">
+            <h3>可选：AI 清洗</h3>
+            <p>点击「AI 清洗」触发 API 调用（需预先填入 Key），去除广告语和版权声明，格式化段落；结果显示在面板供确认</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="step-num">6</div>
+          <div class="step-body">
+            <h3>保存下载</h3>
+            <p>点击「保存 TXT」，弹出浏览器下载框，文件名：<code>《页面标题》_20240515_1430.txt</code></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>五、TXT 文件格式规范</h2>
+    <div class="file-spec"><span class="comment"># 文件名格式：页面标题_YYYYMMDD_HHmm.txt
+# 示例：《人工智能的未来》深度解析_20240515_1430.txt
+</span>
+标题：《人工智能的未来》深度解析
+来源：https://example.com/article/12345
+提取时间：2024-05-15 14:30
+---
+
+[正文内容，保留原始段落结构]
+
+第一段落内容……
+
+第二段落内容……
+</div>
+  </div>
+
+  <div class="section">
+    <h2>六、技术选型</h2>
+    <div class="tech-grid">
+      <div class="tech-card">
+        <div class="module">插件平台</div>
+        <div class="choice">Chrome Extension MV3</div>
+        <div class="reason">现代标准，兼容 Edge；MV3 Service Worker 替代 Background Page</div>
+      </div>
+      <div class="tech-card">
+        <div class="module">正文识别</div>
+        <div class="choice">@mozilla/readability</div>
+        <div class="reason">npm 可安装，Firefox 阅读模式内核，单文件引入，覆盖率 ~90%</div>
+      </div>
+      <div class="tech-card">
+        <div class="module">内容脚本</div>
+        <div class="choice">content_script.js (原生 JS)</div>
+        <div class="reason">无框架依赖，注入体积小；Shadow DOM 隔离插件样式</div>
+      </div>
+      <div class="tech-card">
+        <div class="module">面板 UI</div>
+        <div class="choice">popup.html + sidebar panel</div>
+        <div class="reason">popup 做控制，侧边 panel 做预览，chrome.sidePanel API</div>
+      </div>
+      <div class="tech-card">
+        <div class="module">本地存储</div>
+        <div class="choice">chrome.storage.local</div>
+        <div class="reason">暂存已选内容；API Key 用 AES 加密后再存储</div>
+      </div>
+      <div class="tech-card">
+        <div class="module">文件下载</div>
+        <div class="choice">chrome.downloads API</div>
+        <div class="reason">Blob URL 生成 TXT，触发浏览器原生下载</div>
+      </div>
+      <div class="tech-card">
+        <div class="module">AI 清洗</div>
+        <div class="choice">Anthropic / OpenAI API</div>
+        <div class="reason">用户自填 Key，直连 API，插件不做中转；模型建议 claude-haiku / gpt-4o-mini（低成本）</div>
+      </div>
+      <div class="tech-card">
+        <div class="module">动态内容</div>
+        <div class="choice">MutationObserver</div>
+        <div class="reason">监听 DOM 变化，适配无限滚动/懒加载页面</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>七、风险与应对</h2>
+    <div class="risk-list">
+      <div class="risk-item">
+        <div class="risk-icon">⚠️</div>
+        <div class="risk-body">
+          <div class="risk-title">Canvas / 图片渲染的文字</div>
+          <div class="risk-desc">部分平台用 Canvas 把文字渲染成图像，innerText 无法读取。应对：检测到 Canvas 时提示用户切换截图 + OCR 方式，或引导使用印象笔记 Clipper 等工具，不强行尝试</div>
+        </div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-icon">⚠️</div>
+        <div class="risk-body">
+          <div class="risk-title">Shadow DOM 内容</div>
+          <div class="risk-desc">Web Components 渲染的正文 innerText 无法穿透。应对：在 content script 中递归检查 shadowRoot，读取 shadowRoot.innerText</div>
+        </div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-icon">⚠️</div>
+        <div class="risk-body">
+          <div class="risk-title">插件样式被页面覆盖</div>
+          <div class="risk-desc">高优先级 CSS 会破坏高亮效果。应对：使用 Shadow DOM 隔离插件注入的 UI 元素；高亮样式用极高 z-index + !important</div>
+        </div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-icon">⚠️</div>
+        <div class="risk-body">
+          <div class="risk-title">平台反插件检测</div>
+          <div class="risk-desc">少数平台检测 user-select 是否被修改，可能触发封号风险。应对：插件只读取文本，不修改 CSS 属性，降低被检测概率；产品定位明确聚焦个人学习笔记</div>
+        </div>
+      </div>
+      <div class="risk-item">
+        <div class="risk-icon">💡</div>
+        <div class="risk-body">
+          <div class="risk-title">API Key 安全</div>
+          <div class="risk-desc">用户 Key 存在 chrome.storage.local 中有泄露风险。应对：使用 AES-GCM 加密存储，Key 从不出现在请求日志或 popup 的可见文本中</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>八、开发路线（推荐顺序）</h2>
+    <div class="roadmap">
+      <div class="milestone">
+        <div class="ms-time">第 1 周</div>
+        <div class="ms-card" style="border-left: 3px solid var(--coral-200);">
+          <div class="ms-title">MVP 核心链路</div>
+          <ul class="ms-items">
+            <li>manifest.json + content.js + popup.html 三文件结构搭建</li>
+            <li>激活 / 退出选择模式</li>
+            <li>悬停高亮 + 点击锁定 DOM 块</li>
+            <li>读取 innerText，保存 TXT 下载</li>
+          </ul>
+        </div>
+      </div>
+      <div class="milestone">
+        <div class="ms-time">第 2 周</div>
+        <div class="ms-card" style="border-left: 3px solid var(--amber-200);">
+          <div class="ms-title">引入 Readability（第一层）</div>
+          <ul class="ms-items">
+            <li>npm 引入 @mozilla/readability，打包进插件</li>
+            <li>自动识别正文区域，高亮推荐</li>
+            <li>侧边预览面板（chrome.sidePanel）</li>
+            <li>多块选择与顺序管理</li>
+          </ul>
+        </div>
+      </div>
+      <div class="milestone">
+        <div class="ms-time">第 3 周</div>
+        <div class="ms-card" style="border-left: 3px solid var(--blue-200);">
+          <div class="ms-title">AI 清洗（第三层）+ 收尾</div>
+          <ul class="ms-items">
+            <li>设置页 API Key 输入 + AES 加密存储</li>
+            <li>AI 清洗按钮 + Prompt 封装</li>
+            <li>快捷键 Alt+E</li>
+            <li>MutationObserver 支持动态内容</li>
+          </ul>
+        </div>
+      </div>
+      <div class="milestone">
+        <div class="ms-time">后续迭代</div>
+        <div class="ms-card" style="border-left: 3px solid var(--gray-200);">
+          <div class="ms-title">P2 功能 + 发布</div>
+          <ul class="ms-items">
+            <li>历史记录、Markdown 导出</li>
+            <li>iframe 支持（all_frames: true）</li>
+            <li>Shadow DOM 穿透处理</li>
+            <li>Chrome Web Store 发布审核</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+  <p style="font-size:13px;color:var(--text-ter);text-align:center">文本提取插件 · 完整产品方案 v1.0 · 基于 Chrome Extension MV3 + Readability.js + 可选 AI 清洗</p>
+
+</div>
+</body>
+</html>
