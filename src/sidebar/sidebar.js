@@ -7,6 +7,13 @@ const STORAGE_KEYS = {
   EXTRACTION_TIME: 'extraction_time'
 };
 
+const LLM_STORAGE_KEYS = {
+  PROVIDER: 'llm_provider',
+  ENDPOINT: 'llm_endpoint',
+  MODEL: 'llm_model',
+  API_KEY: 'llm_api_key'
+};
+
 let blocks = [];
 let pageTitle = '';
 let pageUrl = '';
@@ -38,6 +45,130 @@ ${blocksText}`;
   URL.revokeObjectURL(url);
 });
 
+async function callLLM(text) {
+  const result = await chrome.storage.local.get([
+    LLM_STORAGE_KEYS.PROVIDER,
+    LLM_STORAGE_KEYS.ENDPOINT,
+    LLM_STORAGE_KEYS.MODEL,
+    LLM_STORAGE_KEYS.API_KEY
+  ]);
+
+  if (!result[LLM_STORAGE_KEYS.API_KEY]) {
+    throw new Error('请先在设置中配置 LLM');
+  }
+
+  const provider = result[LLM_STORAGE_KEYS.PROVIDER];
+  const endpoint = result[LLM_STORAGE_KEYS.ENDPOINT];
+  const model = result[LLM_STORAGE_KEYS.MODEL];
+  const encryptedKey = result[LLM_STORAGE_KEYS.API_KEY];
+
+  // 解密 API Key
+  const { decrypt, getDeviceId } = await import('../shared/crypto.js');
+  const deviceId = getDeviceId();
+  const apiKey = await decrypt(encryptedKey, deviceId);
+
+  // 构建请求
+  const prompt = `请清理以下文本，去除版权声明、广告语、导航文字等非正文内容，保留原始段落结构。直接输出清理后的文本，不要解释：
+
+${text}`;
+
+  if (provider === 'anthropic') {
+    return await callAnthropic(endpoint, model, apiKey, prompt);
+  } else if (provider === 'openai') {
+    return await callOpenAI(endpoint, model, apiKey, prompt);
+  } else {
+    return await callCustom(endpoint, model, apiKey, prompt);
+  }
+}
+
+async function callAnthropic(endpoint, model, apiKey, prompt) {
+  const response = await fetch(endpoint + '/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: model,
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error('AI 请求失败: ' + response.status);
+  }
+
+  const data = await response.json();
+  return data.content[0].text;
+}
+
+async function callOpenAI(endpoint, model, apiKey, prompt) {
+  const response = await fetch(endpoint + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 4096
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('AI 请求失败: ' + response.status);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
+async function callCustom(endpoint, model, apiKey, prompt) {
+  // 自定义 Provider 使用相同的聊天格式
+  return await callOpenAI(endpoint, model, apiKey, prompt);
+}
+
+document.getElementById('aiBtn').addEventListener('click', async () => {
+  const aiBtn = document.getElementById('aiBtn');
+  const stats = document.getElementById('stats');
+
+  if (blocks.length === 0) {
+    alert('请先选择内容');
+    return;
+  }
+
+  const originalText = blocks.map(b => b.text).join('\n\n---\n\n');
+
+  aiBtn.textContent = '清洗中...';
+  aiBtn.classList.add('loading');
+  aiBtn.disabled = true;
+
+  try {
+    const cleanedText = await callLLM(originalText);
+
+    // 显示确认对话框
+    const confirmed = confirm('AI 清洗完成，是否替换原文？\n\n预览：\n' + cleanedText.substring(0, 200) + '...');
+
+    if (confirmed) {
+      // 替换原文
+      blocks = [{ text: cleanedText }];
+      await chrome.storage.local.set({ [STORAGE_KEYS.SELECTED_BLOCKS]: blocks });
+      render();
+      stats.textContent = 'AI 清洗完成';
+    }
+  } catch (err) {
+    alert('清洗失败: ' + err.message);
+  } finally {
+    aiBtn.textContent = 'AI 清洗';
+    aiBtn.classList.remove('loading');
+    aiBtn.disabled = false;
+  }
+});
+
 async function loadBlocks() {
   const result = await chrome.storage.local.get([
     STORAGE_KEYS.SELECTED_BLOCKS,
@@ -56,11 +187,13 @@ function render() {
   const content = document.getElementById('content');
   const emptyState = document.getElementById('emptyState');
   const saveBtn = document.getElementById('saveBtn');
+  const aiBtn = document.getElementById('aiBtn');
   const stats = document.getElementById('stats');
 
   if (blocks.length === 0) {
     content.innerHTML = '<div class="empty-state" id="emptyState">点击页面中的段落来添加内容</div>';
     saveBtn.disabled = true;
+    aiBtn.disabled = true;
     stats.textContent = '已选 0 段，约 0 字';
     return;
   }
@@ -74,6 +207,7 @@ function render() {
   `).join('');
 
   saveBtn.disabled = false;
+  aiBtn.disabled = false;
   const totalChars = blocks.reduce((sum, b) => sum + b.text.length, 0);
   stats.textContent = `已选 ${blocks.length} 段，约 ${totalChars} 字`;
 
