@@ -3,6 +3,17 @@
 document.getElementById('startBtn').addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
+  if (!tab || !tab.id) {
+    document.getElementById('status').textContent = '无法获取当前标签页';
+    return;
+  }
+
+  // 检查是否为受限页面
+  if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:'))) {
+    document.getElementById('status').textContent = '此页面不支持使用插件';
+    return;
+  }
+
   try {
     await chrome.tabs.sendMessage(tab.id, { type: 'START_SELECTION' });
     document.getElementById('status').textContent = '选择模式已开启';
@@ -11,8 +22,12 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 
     window.close();
   } catch (err) {
-    document.getElementById('status').textContent = '无法启动：请刷新页面后重试';
     console.error('Failed to start selection:', err);
+    if (err.message?.includes('Could not establish connection')) {
+      document.getElementById('status').textContent = '请刷新页面后重试';
+    } else {
+      document.getElementById('status').textContent = '错误：' + (err.message?.substring(0, 30) || '未知');
+    }
   }
 });
 
