@@ -23,6 +23,7 @@
   },
   "homepage": "https://github.com/hangsa/zhcp2#readme",
   "dependencies": {
-    "@mozilla/readability": "^0.6.0"
+    "@mozilla/readability": "^0.6.0",
+    "opentype.js": "^2.0.0"
   }
 }

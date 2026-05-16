@@ -28,6 +28,13 @@ let selectedBlocks = [];
 let _blockIdCounter = 0;
 let _suppressStorageChange = false;
 
+function getDecodedText(element) {
+  if (window.ZhihuFontDecoder && window.ZhihuFontDecoder.isReady()) {
+    return window.ZhihuFontDecoder.decodeElement(element);
+  }
+  return element.innerText;
+}
+
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (message.type === 'START_SELECTION') {
     startSelectionMode();
@@ -201,7 +208,7 @@ function findTextBlock(element) {
   while (current && current !== document.body) {
     const tagName = current.tagName;
     if (['ARTICLE', 'SECTION', 'DIV', 'P'].includes(tagName)) {
-      const text = current.innerText.trim();
+      const text = getDecodedText(current).trim();
       if (text.length > 20) {
         return current;
       }
@@ -222,7 +229,7 @@ async function saveSelectedBlocksToStorage() {
     const existing = existingMap.get(blockId);
     return {
       blockId: blockId,
-      text: existing ? existing.text : block.innerText,
+      text: existing ? existing.text : getDecodedText(block),
       index: index
     };
   });
@@ -262,7 +269,7 @@ function findMainContentElement(doc) {
   const selectors = ['article', 'main', '[role="main"]', '.post-content', '.article-content', '.entry-content'];
   for (const selector of selectors) {
     const el = doc.querySelector(selector);
-    if (el && el.innerText.length > 100) return el;
+    if (el && getDecodedText(el).length > 100) return el;
   }
   return null;
 }
@@ -396,4 +403,9 @@ function syncHighlightsFromStorage() {
       }
     });
   });
+}
+
+// Initialize font decoder for Zhihu pages (if loaded)
+if (window.ZhihuFontDecoder) {
+  window.ZhihuFontDecoder.init();
 }
