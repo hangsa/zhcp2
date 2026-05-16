@@ -2,7 +2,7 @@
 // Handles: keyboard shortcut, sidePanel behavior, message routing
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+  chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false });
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
@@ -17,9 +17,19 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
-// Handle sidePanel open requests (content scripts can't call setOptions)
+// Handle sidePanel open requests (content scripts can't call sidePanel API)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OPEN_SIDEPANEL') {
-    chrome.sidePanel.openPanel().catch(err => console.error('openPanel failed:', err));
+    // Chrome 116-147: openPanel() / Chrome 148+: open()
+    const openFn = chrome.sidePanel?.open || chrome.sidePanel?.openPanel;
+
+    if (!openFn) {
+      console.error('[zhcp] sidePanel open not available');
+      return;
+    }
+
+    openFn.call(chrome.sidePanel, { tabId: sender.tab.id })
+      .then(() => console.log('[zhcp] sidePanel opened'))
+      .catch(err => console.error('[zhcp] sidePanel open failed:', err.message || err));
   }
 });

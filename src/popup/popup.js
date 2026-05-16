@@ -16,6 +16,7 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 
   try {
     await chrome.tabs.sendMessage(tab.id, { type: 'START_SELECTION' });
+    console.log('[zhcp] popup: START_SELECTION sent');
     document.getElementById('status').textContent = '选择模式已开启';
     document.getElementById('startBtn').textContent = '选择中...';
     document.getElementById('startBtn').disabled = true;
@@ -32,12 +33,25 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('saveBtn').addEventListener('click', async () => {
-  // 通过 background 打开 sidePanel，由 sidePanel 处理保存逻辑
+  // Popup 可直接调 sidePanel API（不需要通过 background 中转）
+  const openFn = chrome.sidePanel?.open || chrome.sidePanel?.openPanel;
+
+  if (!openFn) {
+    document.getElementById('status').textContent = '当前浏览器不支持侧栏面板';
+    return;
+  }
+
   try {
-    await chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' });
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      document.getElementById('status').textContent = '无法获取当前标签页';
+      return;
+    }
+    await openFn.call(chrome.sidePanel, { tabId: tab.id });
     window.close();
   } catch (err) {
-    document.getElementById('status').textContent = '无法打开侧栏：请先选择内容';
+    console.error('[zhcp] popup: sidePanel open failed:', err.message || err);
+    document.getElementById('status').textContent = '无法打开侧栏，请刷新页面后重试';
   }
 });
 

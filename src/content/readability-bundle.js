@@ -4227,6 +4227,8 @@ const STORAGE_KEYS = {
 
 let currentMode = SELECTION_MODE.INACTIVE;
 let selectedBlocks = [];
+let _blockIdCounter = 0;
+let _suppressStorageChange = false;
 
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (message.type === 'START_SELECTION') {
@@ -4353,28 +4355,47 @@ function handleMouseOut(e) {
   }
 }
 
-function handleClick(e) {
+async function handleClick(e) {
   if (currentMode !== SELECTION_MODE.MANUAL) return;
   const block = findTextBlock(e.target);
   if (!block) return;
+
+  console.log('[zhcp] handleClick:', block.tagName, block.className);
 
   e.preventDefault();
   e.stopPropagation();
 
   if (selectedBlocks.includes(block)) {
+    // Deselect
+    console.log('[zhcp] deselect block:', block.dataset.zhcpBlockId);
     block.classList.remove(HIGHLIGHT_STYLES.HOVER);
     block.classList.remove(HIGHLIGHT_STYLES.SELECTED);
+    delete block.dataset.zhcpBlockId;
     selectedBlocks = selectedBlocks.filter(b => b !== block);
   } else {
+    // Select - assign blockId if new
+    if (!block.dataset.zhcpBlockId) {
+      block.dataset.zhcpBlockId = `b${Date.now()}_${_blockIdCounter++}`;
+    }
+    console.log('[zhcp] select block:', block.dataset.zhcpBlockId, 'total:', selectedBlocks.length + 1);
     block.classList.remove(HIGHLIGHT_STYLES.HOVER);
     block.classList.add(HIGHLIGHT_STYLES.SELECTED);
     selectedBlocks.push(block);
   }
 
-  saveSelectedBlocksToStorage();
+  // 通过 background 打开 sidePanel（在 await 之前发送，保留 user gesture）
+  console.log('[zhcp] sending OPEN_SIDEPANEL');
+  try {
+    chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' });
+  } catch (err) {
+    console.error('[zhcp] sendMessage OPEN_SIDEPANEL error:', err);
+  }
 
-  // 通过 background 打开 sidePanel
-  chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' });
+  await saveSelectedBlocksToStorage();
+
+  // 通知侧栏数据已就绪（侧栏可能在 storage 写入完成前已加载）
+  console.log('[zhcp] sending BLOCKS_UPDATED');
+  chrome.runtime.sendMessage({ type: 'BLOCKS_UPDATED' });
 }
 
 function findTextBlock(element) {
@@ -4392,18 +4413,31 @@ function findTextBlock(element) {
   return null;
 }
 
-function saveSelectedBlocksToStorage() {
-  const blocksData = selectedBlocks.map(block => ({
-    text: block.innerText,
-    index: selectedBlocks.indexOf(block)
-  }));
+async function saveSelectedBlocksToStorage() {
+  // Read existing storage to preserve sidebar edits
+  const result = await chrome.storage.local.get([STORAGE_KEYS.SELECTED_BLOCKS]);
+  const existingBlocks = result[STORAGE_KEYS.SELECTED_BLOCKS] || [];
+  const existingMap = new Map(existingBlocks.map(b => [b.blockId, b]));
 
-  chrome.storage.local.set({
+  const blocksData = selectedBlocks.map((block, index) => {
+    const blockId = block.dataset.zhcpBlockId;
+    const existing = existingMap.get(blockId);
+    return {
+      blockId: blockId,
+      text: existing ? existing.text : block.innerText,
+      index: index
+    };
+  });
+
+  _suppressStorageChange = true;
+  await chrome.storage.local.set({
     [STORAGE_KEYS.SELECTED_BLOCKS]: blocksData,
     [STORAGE_KEYS.PAGE_TITLE]: document.title,
     [STORAGE_KEYS.PAGE_URL]: window.location.href,
     [STORAGE_KEYS.EXTRACTION_TIME]: new Date().toISOString()
   });
+  console.log('[zhcp] storage written:', blocksData.length, 'blocks, ids:', blocksData.map(b => b.blockId));
+  setTimeout(() => { _suppressStorageChange = false; }, 0);
 }
 
 function clearAllHighlights() {
@@ -4415,6 +4449,10 @@ function clearAllHighlights() {
   });
   document.querySelectorAll('.' + HIGHLIGHT_STYLES.AUTO_SUGGEST).forEach(el => {
     el.classList.remove(HIGHLIGHT_STYLES.AUTO_SUGGEST);
+  });
+  // Clear blockId from tracked elements
+  document.querySelectorAll('[data-zhcp-block-id]').forEach(el => {
+    delete el.dataset.zhcpBlockId;
   });
   // Remove auto hint if exists
   const hint = document.getElementById('zhcp-auto-hint');
@@ -4455,27 +4493,38 @@ function showAutoSuggestHint(element) {
   element.style.position = 'relative';
   element.appendChild(hint);
 
-  hint.addEventListener('click', (e) => {
+  hint.addEventListener('click', async (e) => {
     e.stopPropagation();
     // 接受自动识别结果
     element.classList.remove(HIGHLIGHT_STYLES.AUTO_SUGGEST);
     element.classList.add(HIGHLIGHT_STYLES.SELECTED);
+    if (!element.dataset.zhcpBlockId) {
+      element.dataset.zhcpBlockId = `b${Date.now()}_${_blockIdCounter++}`;
+    }
     if (!selectedBlocks.includes(element)) {
       selectedBlocks.push(element);
     }
-    saveSelectedBlocksToStorage();
     hint.remove();
 
     // 切换到手动模式，允许取消和追加选择
     currentMode = SELECTION_MODE.MANUAL;
 
-    // 通过 background 打开 sidePanel
+    // 通过 background 打开 sidePanel（在 await 之前发送，保留 user gesture）
     chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' });
+
+    await saveSelectedBlocksToStorage();
+
+    // 通知侧栏数据已就绪
+    chrome.runtime.sendMessage({ type: 'BLOCKS_UPDATED' });
   });
 }
 
 async function saveSelectedBlocksToFile() {
-  if (selectedBlocks.length === 0) {
+  // Read from storage to include sidebar edits
+  const result = await chrome.storage.local.get([STORAGE_KEYS.SELECTED_BLOCKS]);
+  const storedBlocks = result[STORAGE_KEYS.SELECTED_BLOCKS] || [];
+
+  if (storedBlocks.length === 0) {
     return { success: false, error: 'No blocks selected' };
   }
 
@@ -4483,7 +4532,7 @@ async function saveSelectedBlocksToFile() {
   const now = new Date();
   const datetime = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
 
-  const blocksText = selectedBlocks.map(block => block.innerText.trim()).join('\n\n---\n\n');
+  const blocksText = storedBlocks.map(b => b.text.trim()).join('\n\n---\n\n');
 
   const content = `标题：《${title}》
 来源：${window.location.href}
@@ -4505,4 +4554,48 @@ ${blocksText}`;
 
   URL.revokeObjectURL(url);
   return { success: true };
+}
+
+// Listen for storage changes from sidebar (edits, deletes, reorders)
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  if (!changes[STORAGE_KEYS.SELECTED_BLOCKS]) return;
+  if (_suppressStorageChange) {
+    console.log('[zhcp] onChanged: suppressed (own write)');
+    return;
+  }
+  const oldLen = (changes[STORAGE_KEYS.SELECTED_BLOCKS].oldValue || []).length;
+  const newLen = (changes[STORAGE_KEYS.SELECTED_BLOCKS].newValue || []).length;
+  console.log('[zhcp] onChanged: storage changed by sidebar, old:', oldLen, 'new:', newLen);
+  syncHighlightsFromStorage();
+});
+
+function syncHighlightsFromStorage() {
+  chrome.storage.local.get([STORAGE_KEYS.SELECTED_BLOCKS]).then(result => {
+    const storedBlocks = result[STORAGE_KEYS.SELECTED_BLOCKS] || [];
+    const storedIds = new Set(storedBlocks.map(b => b.blockId));
+
+    // Remove highlights from elements no longer in storage
+    document.querySelectorAll('[data-zhcp-block-id]').forEach(el => {
+      if (!storedIds.has(el.dataset.zhcpBlockId)) {
+        el.classList.remove(HIGHLIGHT_STYLES.SELECTED, HIGHLIGHT_STYLES.HOVER);
+        delete el.dataset.zhcpBlockId;
+      }
+    });
+
+    // Rebuild selectedBlocks in storage order
+    const idToEl = new Map();
+    document.querySelectorAll('[data-zhcp-block-id]').forEach(el => {
+      idToEl.set(el.dataset.zhcpBlockId, el);
+    });
+
+    selectedBlocks = [];
+    storedBlocks.forEach(b => {
+      const el = idToEl.get(b.blockId);
+      if (el) {
+        el.classList.add(HIGHLIGHT_STYLES.SELECTED);
+        selectedBlocks.push(el);
+      }
+    });
+  });
 }
