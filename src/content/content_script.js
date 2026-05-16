@@ -26,7 +26,7 @@ const STORAGE_KEYS = {
 let currentMode = SELECTION_MODE.INACTIVE;
 let selectedBlocks = [];
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (message.type === 'START_SELECTION') {
     startSelectionMode();
     sendResponse({ success: true });
