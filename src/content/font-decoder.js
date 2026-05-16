@@ -15,9 +15,8 @@
 
   const REF_FONT = '64px "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Hiragino Sans GB", sans-serif';
   const CANVAS_SIZE = 64;
-  const SIMILARITY_THRESHOLD = 0.75;
+  const SIMILARITY_THRESHOLD = 0.60;
 
-  // Anchor characters — common Chinese chars from Zhihu UI + top-100 frequency list
   const FALLBACK_ANCHORS = [
     '赞', '同', '收', '藏', '评', '论', '关', '注', '分', '享',
     '举', '报', '编', '辑', '删', '除', '回', '复', '发', '布',
@@ -44,11 +43,11 @@
 
   // ---- State ----
 
-  let _status = 'idle'; // idle|detecting|downloading|parsing|calibrating|ready|error
+  let _status = 'idle';
   let _errorMessage = null;
-  let _mapping = null; // Map<number, string> — PUA codepoint → real character
+  let _mapping = null;
   let _initCalled = false;
-  let _decodeRate = 0; // 0-1
+  let _decodeRate = 0;
 
   // ---- Public API ----
 
@@ -94,7 +93,16 @@
       }
       console.log('[zhcp] font-decoder: font downloaded, size:', buffer.byteLength);
 
-      // Step 3: Parse font
+      // Step 3: Register font with FontFace API (so Canvas can use it)
+      _status = 'registering';
+      const registered = await registerFont(fontInfo.family, buffer);
+      if (!registered) {
+        console.warn('[zhcp] font-decoder: font registration failed, canvas text may not render');
+      } else {
+        console.log('[zhcp] font-decoder: font registered with FontFace API');
+      }
+
+      // Step 4: Parse font with opentype.js (for glyph data / cmap access)
       _status = 'parsing';
       const font = parseFont(buffer);
       if (!font) {
@@ -103,7 +111,7 @@
       }
       console.log('[zhcp] font-decoder: font parsed, glyphs:', font.glyphs.length);
 
-      // Step 4: Enumerate PUA codepoints
+      // Step 5: Enumerate PUA codepoints
       const puaCodepoints = getPUACodepoints(font);
       if (puaCodepoints.length === 0) {
         setError('未检测到编码字符');
@@ -111,7 +119,7 @@
       }
       console.log('[zhcp] font-decoder: PUA codepoints found:', puaCodepoints.length);
 
-      // Step 5: Calibrate — build mapping
+      // Step 6: Calibrate — build mapping
       _status = 'calibrating';
       _mapping = await calibrate(font, puaCodepoints, fontInfo.family);
       _decodeRate = puaCodepoints.length > 0
@@ -152,12 +160,10 @@
               const src = rule.style.getPropertyValue('src');
               if (!family || !src) continue;
 
-              // Look for url("...") in src
               const urlMatch = src.match(/url\(["']?([^"')]+)["']?\)/);
               if (!urlMatch) continue;
 
               const url = urlMatch[1];
-              // Skip common system fonts
               if (/PingFang|Microsoft|Noto|Hiragino|sans-serif|serif|Arial|Helvetica/i.test(family)) {
                 continue;
               }
@@ -166,7 +172,6 @@
             }
           }
         } catch (e) {
-          // Cross-origin stylesheet — can't read rules, skip
           continue;
         }
       }
@@ -176,23 +181,19 @@
 
     if (candidateFonts.length === 0) return null;
 
-    // Try to find a font that looks like a data-hiding font
-    // Strategy: prefer fonts with short, hashed-like names (typical of anti-crawl)
-    // Fall back to the first non-standard font
     const hashedFont = candidateFonts.find(f => /^[a-z0-9]{6,}/i.test(f.family));
     const result = hashedFont || candidateFonts[0];
 
-    // Resolve relative URLs
     try {
       result.url = new URL(result.url, window.location.href).href;
     } catch (e) {
-      // If resolution fails, keep original
+      // Keep original URL
     }
 
     return result;
   }
 
-  // ---- Font Loading ----
+  // ---- Font Loading & Registration ----
 
   async function downloadFont(url) {
     try {
@@ -205,6 +206,18 @@
     } catch (err) {
       console.error('[zhcp] font-decoder: download error:', err);
       return null;
+    }
+  }
+
+  async function registerFont(family, buffer) {
+    try {
+      const fontFace = new FontFace(family, buffer);
+      await fontFace.load();
+      document.fonts.add(fontFace);
+      return true;
+    } catch (err) {
+      console.error('[zhcp] font-decoder: FontFace registration error:', err);
+      return false;
     }
   }
 
@@ -229,8 +242,9 @@
 
   function getPUACodepoints(font) {
     const puaSet = new Set();
-    if (font.tables && font.tables.cmap) {
-      for (const [codepoint] of font.tables.cmap.glyphIndexMap) {
+    const cmap = font.tables && font.tables.cmap;
+    if (cmap && cmap.glyphIndexMap) {
+      for (const [codepoint] of cmap.glyphIndexMap) {
         if (isPUA(codepoint)) {
           puaSet.add(codepoint);
         }
@@ -239,13 +253,42 @@
     return [...puaSet];
   }
 
+  // ---- Glyph Name Fast Path ----
+
+  function tryDecodeFromGlyphNames(font, puaCodepoints) {
+    // Many anti-crawl fonts use uniXXXX naming where XXXX is the real Unicode hex.
+    // Pattern: uni<hex> e.g. uni8D5E = U+8D5E = '赞'
+    const mapping = new Map();
+    const uniPattern = /^uni([0-9A-Fa-f]{4,6})$/;
+
+    for (const cp of puaCodepoints) {
+      const glyph = font.glyphs.find(g => g.unicode === cp);
+      if (!glyph || !glyph.name) continue;
+
+      const match = glyph.name.match(uniPattern);
+      if (match) {
+        const realCodePoint = parseInt(match[1], 16);
+        try {
+          const realChar = String.fromCodePoint(realCodePoint);
+          if (realChar && realChar !== '�') {
+            mapping.set(cp, realChar);
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    return mapping;
+  }
+
   // ---- Anchor Collection ----
 
   function isCJKChar(ch) {
     const cp = ch.codePointAt(0);
-    return (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified Ideographs
-           (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Extension A
-           (cp >= 0xf900 && cp <= 0xfaff);    // CJK Compatibility Ideographs
+    return (cp >= 0x4e00 && cp <= 0x9fff) ||
+           (cp >= 0x3400 && cp <= 0x4dbf) ||
+           (cp >= 0xf900 && cp <= 0xfaff);
   }
 
   function collectAnchorsFromPage() {
@@ -262,7 +305,6 @@
     for (const selector of UI_SELECTORS) {
       try {
         document.querySelectorAll(selector).forEach(el => {
-          // Skip large text blocks (likely article content)
           const text = el.textContent || '';
           if (text.length > 100) return;
           for (const ch of text) {
@@ -284,7 +326,6 @@
     const merged = new Set([...pageAnchors, ...FALLBACK_ANCHORS]);
     const result = [...merged];
 
-    // Sort: page anchors first (more reliable), then fallback
     const pageSet = new Set(pageAnchors);
     result.sort((a, b) => {
       const aPage = pageSet.has(a) ? 0 : 1;
@@ -297,6 +338,66 @@
     return result;
   }
 
+  // ---- Glyph Features (for pre-filtering) ----
+
+  function computeGlyphFeatures(font, codepoint) {
+    try {
+      const glyph = font.glyphs.find(g => g.unicode === codepoint);
+      if (!glyph) return null;
+
+      const path = glyph.getPath(0, 0, 64);
+      if (!path || !path.commands || path.commands.length === 0) return null;
+
+      let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+      let pointCount = 0;
+      let contourCount = 0;
+
+      for (const cmd of path.commands) {
+        if (cmd.type === 'M') contourCount++;
+        if (cmd.x !== undefined) {
+          xmin = Math.min(xmin, cmd.x);
+          xmax = Math.max(xmax, cmd.x);
+          pointCount++;
+        }
+        if (cmd.y !== undefined) {
+          ymin = Math.min(ymin, cmd.y);
+          ymax = Math.max(ymax, cmd.y);
+        }
+      }
+
+      const width = xmax - xmin;
+      const height = ymax - ymin;
+      if (width <= 1 || height <= 1) return null;
+
+      return {
+        aspectRatio: width / height,
+        boundsWidth: width,
+        boundsHeight: height,
+        contourCount: contourCount,
+        pointCount: pointCount
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function featuresMatch(fa, fb) {
+    if (!fa || !fb) return true; // Allow through if can't compare
+
+    const arDiff = Math.abs(fa.aspectRatio - fb.aspectRatio);
+    const arOk = arDiff < 0.35;
+
+    const widthRatio = fa.boundsWidth / Math.max(fb.boundsWidth, 1);
+    const heightRatio = fa.boundsHeight / Math.max(fb.boundsHeight, 1);
+    const sizeOk = widthRatio > 0.4 && widthRatio < 2.5 &&
+                   heightRatio > 0.4 && heightRatio < 2.5;
+
+    const ccOk = fa.contourCount === fb.contourCount ||
+                 Math.abs(fa.contourCount - fb.contourCount) <= 1;
+
+    return arOk && sizeOk && ccOk;
+  }
+
   // ---- Canvas Rendering ----
 
   function renderGlyphToImageData(char, fontStr) {
@@ -305,11 +406,9 @@
     canvas.height = CANVAS_SIZE;
     const ctx = canvas.getContext('2d');
 
-    // White background
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-    // Black text, centered
     ctx.fillStyle = '#000000';
     ctx.font = fontStr;
     ctx.textAlign = 'center';
@@ -328,7 +427,7 @@
     let totalPixels = 0;
 
     for (let i = 0; i < dataA.length; i += 4) {
-      const pixelA = dataA[i] < 200; // Not white = glyph pixel
+      const pixelA = dataA[i] < 200;
       const pixelB = dataB[i] < 200;
 
       if (pixelA || pixelB) {
@@ -336,7 +435,6 @@
         if (pixelA === pixelB) {
           matchScore++;
         } else {
-          // Partial match based on intensity difference
           const diff = Math.abs(dataA[i] - dataB[i]);
           matchScore += Math.max(0, 1 - diff / 255);
         }
@@ -346,62 +444,31 @@
     return totalPixels > 0 ? matchScore / totalPixels : 0;
   }
 
-  // ---- Glyph Features (for pre-filtering) ----
-
-  function computeGlyphFeatures(glyph) {
-    if (!glyph || !glyph.path) return null;
-
-    const path = glyph.path;
-    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
-    let pointCount = 0;
-    let contourCount = 0;
-
-    try {
-      // opentype.js path.commands: {type, x, y}
-      contourCount = (path.commands || []).filter(c => c.type === 'M').length;
-      for (const cmd of (path.commands || [])) {
-        if (cmd.x !== undefined) {
-          xmin = Math.min(xmin, cmd.x);
-          xmax = Math.max(xmax, cmd.x);
-          pointCount++;
-        }
-        if (cmd.y !== undefined) {
-          ymin = Math.min(ymin, cmd.y);
-          ymax = Math.max(ymax, cmd.y);
-        }
-      }
-    } catch (e) {
-      return null;
-    }
-
-    const width = xmax - xmin;
-    const height = ymax - ymin;
-    if (width <= 0 || height <= 0) return null;
-
-    return {
-      aspectRatio: width / height,
-      density: pointCount / (width * height),
-      contourCount: contourCount
-    };
-  }
-
-  function featuresSimilar(fa, fb) {
-    if (!fa || !fb) return true; // Can't compare, allow through
-
-    const arDiff = Math.abs(fa.aspectRatio - fb.aspectRatio);
-    const arOk = arDiff < 0.4;
-
-    const ccOk = fa.contourCount === fb.contourCount;
-
-    return arOk && ccOk;
-  }
-
   // ---- Calibration Main Loop ----
 
   async function calibrate(font, puaCodepoints, fontFamily) {
     const mapping = new Map();
-    const anchors = buildAnchorList();
 
+    // --- Fast path: try glyph name patterns first ---
+    console.log('[zhcp] font-decoder: trying glyph name fast path...');
+    const nameMapping = tryDecodeFromGlyphNames(font, puaCodepoints);
+    if (nameMapping.size > 0) {
+      console.log('[zhcp] font-decoder: glyph name fast path decoded',
+        nameMapping.size, 'characters');
+      for (const [cp, ch] of nameMapping) {
+        mapping.set(cp, ch);
+      }
+      // Remove already-decoded PUA codepoints
+      puaCodepoints = puaCodepoints.filter(cp => !mapping.has(cp));
+    }
+
+    if (puaCodepoints.length === 0) {
+      console.log('[zhcp] font-decoder: all codepoints decoded via glyph names');
+      return mapping;
+    }
+
+    // --- Slow path: geometric pre-filter + pixel comparison ---
+    const anchors = buildAnchorList();
     if (anchors.length === 0) {
       console.warn('[zhcp] font-decoder: no anchors found');
       return mapping;
@@ -409,43 +476,70 @@
 
     const customFontStr = `64px "${fontFamily}", sans-serif`;
 
-    // Render all anchors with REFERENCE font (system font)
-    console.log('[zhcp] font-decoder: rendering', anchors.length, 'anchor glyphs...');
-    const anchorData = new Map(); // char → ImageData
-    for (const ch of anchors) {
-      anchorData.set(ch, renderGlyphToImageData(ch, REF_FONT));
+    // Pre-compute glyph features for PUA codepoints (from opentype.js)
+    const puaFeatures = new Map();
+    for (const cp of puaCodepoints) {
+      const f = computeGlyphFeatures(font, cp);
+      if (f) puaFeatures.set(cp, f);
     }
 
-    // Pre-compute glyph features for PUA codepoints
-    const puaGlyphFeatures = new Map();
-    for (const cp of puaCodepoints) {
-      const glyph = font.glyphs.find(g => g.unicode === cp);
-      if (glyph) {
-        puaGlyphFeatures.set(cp, computeGlyphFeatures(glyph));
+    // Pre-compute anchor features using Canvas-based estimation
+    // Render anchor chars in REF_FONT, extract bounding box from ImageData
+    console.log('[zhcp] font-decoder: rendering', anchors.length, 'anchor glyphs...');
+    const anchorData = new Map(); // char → { imageData, features }
+    for (const ch of anchors) {
+      const imgData = renderGlyphToImageData(ch, REF_FONT);
+      const data = imgData.data;
+      let xmin = CANVAS_SIZE, xmax = 0, ymin = CANVAS_SIZE, ymax = 0;
+      let pixelCount = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] < 200) {
+          const x = (i / 4) % CANVAS_SIZE;
+          const y = Math.floor((i / 4) / CANVAS_SIZE);
+          xmin = Math.min(xmin, x);
+          xmax = Math.max(xmax, x);
+          ymin = Math.min(ymin, y);
+          ymax = Math.max(ymax, y);
+          pixelCount++;
+        }
       }
+      const w = xmax - xmin;
+      const h = ymax - ymin;
+      anchorData.set(ch, {
+        imageData: imgData,
+        features: {
+          aspectRatio: h > 0 ? w / h : 1,
+          boundsWidth: w,
+          boundsHeight: h,
+          contourCount: 1, // Canvas can't give contour count; use default
+          pointCount: pixelCount
+        }
+      });
     }
 
     // For each PUA codepoint, render with CUSTOM font and compare against anchors
-    console.log('[zhcp] font-decoder: calibrating', puaCodepoints.length, 'PUA codepoints...');
+    console.log('[zhcp] font-decoder: calibrating', puaCodepoints.length,
+      'PUA codepoints via pixel comparison...');
     let matchedCount = 0;
 
     for (let i = 0; i < puaCodepoints.length; i++) {
       const cp = puaCodepoints[i];
       const puaChar = String.fromCodePoint(cp);
+      const puaFeatures_i = puaFeatures.get(cp);
       const puaImageData = renderGlyphToImageData(puaChar, customFontStr);
-      const puaFeatures = puaGlyphFeatures.get(cp);
 
       let bestMatch = null;
       let bestScore = 0;
 
-      for (const [ch, anchorImageData] of anchorData) {
-        // Skip if this anchor is already mapped
-        const anchorFeatures = { aspectRatio: 0, density: 0, contourCount: 0 };
-        // Pre-filter: compare feature vectors (lightweight)
-        // For anchors, we don't have glyph data from the custom font,
-        // so pre-filtering is limited to pixel comparison directly.
+      for (const [ch, ad] of anchorData) {
+        // Pre-filter using geometric features
+        if (puaFeatures_i && ad.features) {
+          if (!featuresMatch(puaFeatures_i, ad.features)) {
+            continue;
+          }
+        }
 
-        const score = computeImageSimilarity(puaImageData, anchorImageData);
+        const score = computeImageSimilarity(puaImageData, ad.imageData);
         if (score > bestScore && score >= SIMILARITY_THRESHOLD) {
           bestScore = score;
           bestMatch = ch;
@@ -454,7 +548,6 @@
 
       if (bestMatch) {
         mapping.set(cp, bestMatch);
-        // Remove matched anchor to speed up subsequent comparisons
         anchorData.delete(bestMatch);
         matchedCount++;
       }
@@ -465,7 +558,8 @@
       }
     }
 
-    console.log('[zhcp] font-decoder: matched', matchedCount, '/', puaCodepoints.length, 'characters');
+    console.log('[zhcp] font-decoder: pixel comparison matched',
+      matchedCount, '/', puaCodepoints.length, 'characters');
     return mapping;
   }
 
@@ -477,14 +571,8 @@
     let result = '';
     for (const ch of text) {
       const cp = ch.codePointAt(0);
-      // Handle surrogate pairs (supplementary planes)
-      if (cp > 0xffff) {
-        const mapped = mapping.get(cp);
-        result += mapped || ch;
-      } else {
-        const mapped = mapping.get(cp);
-        result += mapped || ch;
-      }
+      const mapped = mapping.get(cp);
+      result += mapped || ch;
     }
     return result;
   }
@@ -499,7 +587,7 @@
     return applyMapping(text, _mapping);
   }
 
-  // Auto-start the pipeline
+  // Auto-start the pipeline (fallback if content_script.js init call misses)
   setTimeout(() => init(), 0);
 
 })();
