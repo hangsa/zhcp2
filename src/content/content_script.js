@@ -171,10 +171,8 @@ function handleClick(e) {
 
   saveSelectedBlocksToStorage();
 
-  // 打开 sidePanel
-  chrome.sidePanel.openPanel().catch(() => {
-    // sidePanel 可能未启用，忽略错误
-  });
+  // 通过 background 打开 sidePanel
+  chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' });
 }
 
 function findTextBlock(element) {
@@ -269,8 +267,8 @@ function showAutoSuggestHint(element) {
     // 切换到手动模式，允许取消和追加选择
     currentMode = SELECTION_MODE.MANUAL;
 
-    // 打开 sidePanel
-    chrome.sidePanel.openPanel().catch(() => {});
+    // 通过 background 打开 sidePanel
+    chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' });
   });
 }
 

@@ -32,11 +32,12 @@ document.getElementById('startBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('saveBtn').addEventListener('click', async () => {
-  // 直接打开 sidePanel，由 sidePanel 处理保存逻辑
+  // 通过 background 打开 sidePanel，由 sidePanel 处理保存逻辑
   try {
-    await chrome.sidePanel.openPanel();
+    await chrome.runtime.sendMessage({ type: 'OPEN_SIDEPANEL' });
+    window.close();
   } catch (err) {
-    document.getElementById('status').textContent = '请先选择内容';
+    document.getElementById('status').textContent = '无法打开侧栏：请先选择内容';
   }
 });
 
