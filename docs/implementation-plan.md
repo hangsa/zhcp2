@@ -263,8 +263,15 @@ def normalize_glyph(
 def match_score(vec_a: list[float], vec_b: list[float]) -> float:
     """
     欧氏距离 → 相似度分数。
-    score = 1 / (1 + dist)
-    返回 [0, 1]，1 为完全匹配
+    使用指数衰减：score = exp(-dist / sigma)，sigma = 5.0
+    - dist = 0    → score = 1.00（精确匹配）
+    - dist = 2.5  → score ≈ 0.61（PRD 容差阈值 ε=2.5）
+    - dist = 5.0  → score ≈ 0.37
+    - dist = 15.0 → score ≈ 0.05（典型 ±3 扰动字形）
+    返回 [0, 1]，1 为完全匹配。
+
+    注：此处不使用 1/(1+dist)，因为归一化坐标在 [0,100] 空间，
+    典型扰动字形距离约 15，1/(1+15)=0.06 会导致所有 KNN 结果被拒绝。
     """
     pass
 ```
@@ -300,11 +307,15 @@ class FAISSHashIndex:
         pass
 
     def knn_search(self, vector: np.ndarray, k: int = 3) -> list[tuple[str, float]]:
-        """FAISS KNN 搜索，返回 [(字符, 相似度), ...]"""
+        """
+        FAISS KNN 搜索。
+        Returns: [(字符, 欧氏距离), ...] 距离越小越相似
+        """
         pass
 
-    def batch_match(self, hashes: list[str], vectors: list[np.ndarray], tolerance: float) -> dict[str, str]:
-        """批量匹配：优先精确，fallback 到 KNN"""
+    def batch_match(self, hashes: list[str], vectors: list[np.ndarray],
+                    distance_threshold: float = 2.5) -> dict[str, str]:
+        """批量匹配：优先精确，fallback 到 KNN（距离 < distance_threshold 即采纳）"""
         pass
 ```
 
@@ -313,6 +324,15 @@ class FAISSHashIndex:
 
 from fonttools.ttLib import TTFont
 from io import BytesIO
+import math
+
+# KNN 距离阈值：对齐 PRD 容差 ε = 2.5
+KNN_DISTANCE_THRESHOLD = 2.5
+
+# 距离 → 置信度转换（用于上报 stats，非判定逻辑）
+def distance_to_confidence(dist: float, sigma: float = 5.0) -> float:
+    """欧氏距离 → [0,1] 置信度，exp(-dist/sigma)"""
+    return math.exp(-dist / sigma)
 
 class FontReverser:
     """方案 B：字体逆向还原引擎"""
@@ -344,11 +364,13 @@ class FontReverser:
                 mapping[codepoint] = {"char": matched, "method": "exact", "score": 1.0}
                 continue
 
-            # 2. KNN 最近邻搜索
+            # 2. KNN 最近邻搜索（距离阈值对齐 PRD ε = 2.5）
             vector = coords_to_vector(contour.coords)
             candidates = self._index.knn_search(vector, k=3)
-            if candidates[0][1] > 0.95:
-                mapping[codepoint] = {"char": candidates[0][0], "method": "knn", "score": candidates[0][1]}
+            best_char, best_dist = candidates[0]
+            if best_dist < KNN_DISTANCE_THRESHOLD:
+                score = distance_to_confidence(best_dist)
+                mapping[codepoint] = {"char": best_char, "method": "knn", "score": score}
 
         return mapping
 ```
@@ -499,6 +521,110 @@ async def health():
 
 # POST /api/v1/decode — Phase 1 先不做，等 Pipeline 完整后再开放
 ```
+
+### Task 1.4b：多字体映射与元素级匹配（2 天）
+
+| 项 | 内容 |
+|----|------|
+| **负责人** | 后端工程师 |
+| **依赖** | Task 1.3、Task 1.4 |
+| **产出** | `engine/font_resolver.py`（新增）、更新 `proxy/font_extractor.py` |
+
+**背景**：知乎页面通常加载多个混淆字体（zhfont 分支实测单页 4 个），不同 `<span>` 标签使用不同 `font-family`。Pipeline 需为每个字体独立建立映射表，并在文本替换时按元素匹配对应字体。
+
+**设计方案**：
+
+```python
+# engine/font_resolver.py
+
+@dataclass
+class FontEntry:
+    """单次页面加载中的一个混淆字体"""
+    family: str           # CSS font-family 名称
+    url: str              # woff2 文件 URL
+    woff2_bytes: bytes    # 字体文件字节流
+    mapping: dict[int, dict] | None = None  # 该字体的码点→字符映射
+
+class FontResolver:
+    """
+    管理单次页面请求中的多字体映射。
+
+    工作流：
+    1. 解析页面 CSS，提取所有 @font-face → family/URL 对
+    2. 拦截每个 woff2 文件，存入 FontEntry
+    3. 对每个 FontEntry 独立运行方案 B/C/A，建立 mapping
+    4. 文本替换时：对每个 DOM 元素 → 查 computed font-family → 用对应 mapping
+    """
+
+    def __init__(self):
+        self._fonts: dict[str, FontEntry] = {}  # family → FontEntry
+
+    def register_font(self, family: str, url: str, woff2_bytes: bytes):
+        """注册一个页面字体"""
+        self._fonts[family] = FontEntry(family=family, url=url, woff2_bytes=woff2_bytes)
+
+    async def build_all_mappings(self, pipeline: PipelineOrchestrator):
+        """对所有已注册字体运行 build_mapping"""
+        for entry in self._fonts.values():
+            if entry.mapping is None:
+                entry.mapping = await pipeline.build_mapping_for_font(entry.woff2_bytes)
+
+    def decode_element(self, element_text: str, font_family: str) -> str:
+        """对指定元素的文本应用对应字体的映射表"""
+        entry = self._fonts.get(font_family)
+        if not entry or not entry.mapping:
+            return element_text
+        return apply_mapping(element_text, entry.mapping)
+
+    def get_merged_mapping(self) -> dict[int, dict]:
+        """
+        合并所有字体的映射表。
+        同一码点在不同字体中有不同映射时，保留首次出现的映射。
+        用于无法确定具体 font-family 的 fallback 场景。
+        """
+        merged = {}
+        for entry in self._fonts.values():
+            if entry.mapping:
+                for cp, info in entry.mapping.items():
+                    if cp not in merged:
+                        merged[cp] = info
+        return merged
+```
+
+**font_extractor.py 更新**：CSS 解析时记录 `font-family → URL` 映射。
+
+```python
+# proxy/font_extractor.py 新增
+
+def extract_font_family_map(html: str, styles: list[str]) -> dict[str, str]:
+    """
+    从 @font-face 规则中提取 {font-family: woff2_url} 映射。
+    去重：同一 URL 不同 family 是同一个字体文件，合并处理。
+    """
+    pass
+```
+
+**Pipeline 更新**：`process()` 方法增加 font_family 参数。
+
+```python
+async def process(self,
+                  html: str,
+                  font_map: dict[str, bytes],  # {family: woff2_bytes}
+                  options: dict | None = None) -> DecodeResult:
+    resolver = FontResolver()
+    for family, woff2_bytes in font_map.items():
+        resolver.register_font(family, url="", woff2_bytes=woff2_bytes)
+    await resolver.build_all_mappings(self)
+
+    # 对正文区域文本元素逐一解码
+    decoded_text = apply_multi_font_decode(html, resolver)
+    return DecodeResult(text=decoded_text, ...)
+```
+
+**验收标准**：
+- 页面包含 N 个自定义字体时，每个字体独立建立映射
+- 文本元素按 computed font-family 匹配正确字体
+- 合并 fallback 在无法确定 font-family 时仍可用
 
 ### Task 1.5：方案 B 端到端集成测试（3 天）
 
