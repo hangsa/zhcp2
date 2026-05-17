@@ -9,6 +9,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 
+import numpy as np
 from fontTools.ttLib import TTFont
 from fontTools.pens.pointPen import AbstractPointPen
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 class GlyphContour:
     """Normalized glyph contour representation with content hash."""
 
-    coords: list[tuple[float, float, int]]  # (x, y, on_curve_flag)
+    coords: tuple[tuple[float, float, int], ...]  # (x, y, on_curve_flag)
     hash: str  # MD5 hex digest of canonical serialization
 
 
@@ -126,8 +127,6 @@ def extract_raw_coordinates(
             )
             # Apply component transformation matrix (scale + offset)
             if hasattr(component, "transformation"):
-                import numpy as np
-
                 matrix = component.transformation
                 transformed: list[tuple[float, float, int]] = []
                 for x, y, flag in sub_coords:
@@ -169,7 +168,7 @@ def normalize_glyph(
         GlyphContour with normalized coordinates and MD5 hash.
     """
     if not raw_coords:
-        return GlyphContour(coords=[], hash=hashlib.md5(b"").hexdigest())
+        return GlyphContour(coords=(), hash=hashlib.md5(b"").hexdigest())
 
     xs = [c[0] for c in raw_coords]
     ys = [c[1] for c in raw_coords]
@@ -182,16 +181,15 @@ def normalize_glyph(
 
     normalized: list[tuple[float, float, int]] = []
     for x, y, flag in raw_coords:
-        nx = round(((x - x_min) / x_range) * 100.0)
-        ny = round(((y - y_min) / y_range) * 100.0)
+        # Map to [0, 100] (no rounding yet)
+        nx = ((x - x_min) / x_range) * 100.0
+        ny = ((y - y_min) / y_range) * 100.0
 
-        # Quantize
-        if tolerance != 1.0:
-            nx = round(nx / tolerance) * tolerance
-            ny = round(ny / tolerance) * tolerance
-        else:
-            nx = round(nx, 1)
-            ny = round(ny, 1)
+        # Quantize: round(value / tolerance) * tolerance.
+        # With tolerance=1.0 this is equivalent to round(value, 1),
+        # matching PRD §5.3「坐标量化精度：round(value, 1)」.
+        nx = round(nx / tolerance) * tolerance
+        ny = round(ny / tolerance) * tolerance
 
         normalized.append((nx, ny, flag))
 
@@ -202,7 +200,7 @@ def normalize_glyph(
     serialized = ";".join(parts).encode("utf-8")
 
     return GlyphContour(
-        coords=normalized,
+        coords=tuple(normalized),
         hash=hashlib.md5(serialized).hexdigest(),
     )
 
@@ -217,8 +215,6 @@ def coords_to_vector(
     it is often unreliable across fonts. Vectors shorter than max_points
     are zero-padded; longer vectors are truncated.
     """
-    import numpy as np
-
     vec = np.zeros(max_points * 2, dtype=np.float32)
     for i, (x, y, _) in enumerate(coords[:max_points]):
         vec[i * 2] = x

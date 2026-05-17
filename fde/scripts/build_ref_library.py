@@ -143,7 +143,8 @@ def init_database(db_path: Path) -> sqlite3.Connection:
             hash TEXT NOT NULL,
             font_name TEXT NOT NULL,
             coords_blob BLOB,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(char, font_name)
         )
         """
     )
@@ -203,14 +204,18 @@ def process_font(
     # Determine number of faces
     face_numbers = [0]
     if is_ttc:
-        # Probe faces: open sequentially until failure
+        # Probe faces: open sequentially until failure, close each after check
         max_faces = 1
         for fn in range(1, 16):
+            probe = None
             try:
                 probe = TTFont(str(font_path), fontNumber=fn)
                 max_faces = fn + 1
             except Exception:
                 break
+            finally:
+                if probe is not None:
+                    probe.close()
         face_numbers = list(range(max_faces))
 
     for face_num in face_numbers:
@@ -233,57 +238,61 @@ def process_font(
         cmap = font.getBestCmap()
         if not cmap:
             logger.warning("No cmap table in font: %s", font_name)
+            font.close()
             continue
 
-        count = 0
-        for ch in chars:
-            cp = ord(ch)
-            glyph_name = cmap.get(cp)
-            if glyph_name is None:
-                continue
+        try:
+            count = 0
+            for ch in chars:
+                cp = ord(ch)
+                glyph_name = cmap.get(cp)
+                if glyph_name is None:
+                    continue
 
-            try:
-                raw_coords = extract_raw_coordinates(font, glyph_name)
-            except Exception:
-                logger.debug("Failed to extract coords for %s in %s", ch, font_name)
-                continue
+                try:
+                    raw_coords = extract_raw_coordinates(font, glyph_name)
+                except Exception:
+                    logger.debug("Failed to extract coords for %s in %s", ch, font_name)
+                    continue
 
-            if not raw_coords:
-                continue
+                if not raw_coords:
+                    continue
 
-            contour = normalize_glyph(raw_coords, tolerance)
+                contour = normalize_glyph(raw_coords, tolerance)
 
-            coords_blob = json.dumps(
-                [[x, y, f] for x, y, f in contour.coords]
-            ).encode("utf-8")
+                coords_blob = json.dumps(
+                    [[x, y, f] for x, y, f in contour.coords]
+                ).encode("utf-8")
+
+                conn.execute(
+                    "INSERT OR IGNORE INTO glyph_hashes "
+                    "(char, unicode, hash, font_name, coords_blob) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (ch, cp, contour.hash, font_name, coords_blob),
+                )
+                count += 1
+
+            conn.commit()
 
             conn.execute(
-                "INSERT OR REPLACE INTO glyph_hashes "
-                "(char, unicode, hash, font_name, coords_blob) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (ch, cp, contour.hash, font_name, coords_blob),
+                "INSERT OR REPLACE INTO font_metadata "
+                "(font_name, font_path, num_glyphs, format) "
+                "VALUES (?, ?, ?, ?)",
+                (font_name, str(font_path), count, font_path.suffix),
             )
-            count += 1
+            conn.commit()
 
-        conn.commit()
-
-        conn.execute(
-            "INSERT OR REPLACE INTO font_metadata "
-            "(font_name, font_path, num_glyphs, format) "
-            "VALUES (?, ?, ?, ?)",
-            (font_name, str(font_path), count, font_path.suffix),
-        )
-        conn.commit()
-
-        coverage = count / len(chars) * 100 if chars else 0
-        logger.info(
-            "  %s: %d/%d glyphs (%.1f%% coverage)",
-            font_name,
-            count,
-            len(chars),
-            coverage,
-        )
-        total_count += count
+            coverage = count / len(chars) * 100 if chars else 0
+            logger.info(
+                "  %s: %d/%d glyphs (%.1f%% coverage)",
+                font_name,
+                count,
+                len(chars),
+                coverage,
+            )
+            total_count += count
+        finally:
+            font.close()
 
     return total_count
 
@@ -293,7 +302,7 @@ def build_faiss_index(conn: sqlite3.Connection, index_path: Path) -> int:
     import faiss
 
     rows = conn.execute(
-        "SELECT id, char, unicode FROM glyph_hashes"
+        "SELECT id, char, unicode, coords_blob FROM glyph_hashes ORDER BY id"
     ).fetchall()
 
     if not rows:
@@ -303,21 +312,11 @@ def build_faiss_index(conn: sqlite3.Connection, index_path: Path) -> int:
     vectors = np.zeros((len(rows), VECTOR_DIM), dtype=np.float32)
     id_map: dict[int, tuple[str, int]] = {}
 
-    for i, (row_id, char, unicode) in enumerate(rows):
-        # Use padded vector for FAISS
-        vec = np.zeros(VECTOR_DIM, dtype=np.float32)
-        # We need the original coordinates to build the vector
-        # Fetch coords_blob and convert
-        coords_row = conn.execute(
-            "SELECT coords_blob FROM glyph_hashes WHERE id = ?",
-            (row_id,),
-        ).fetchone()
-        if coords_row and coords_row[0]:
-            coord_list = json.loads(coords_row[0])
-            # coords_blob is [[x, y, flag], ...]
+    for i, (row_id, char, unicode, coords_blob) in enumerate(rows):
+        if coords_blob:
+            coord_list = json.loads(coords_blob)
             coords = [(c[0], c[1], c[2]) for c in coord_list]
-            vec = coords_to_vector(coords, max_points=512)
-        vectors[i] = vec
+            vectors[i] = coords_to_vector(coords, max_points=512)
         id_map[i] = (char, unicode)
 
     # Build IVF index
