@@ -387,7 +387,9 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     const mapping = new Map();
     const threshold = 0.55;
     const margin = 0.10;
+    const projMargin = 0.04;
     let skippedCount = 0;
+    let projRescued = 0;
 
     for (let i = 0; i < chars.length; i++) {
       let bestScore = 0;
@@ -403,7 +405,8 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
 
       // Diagnostic: first 5 chars
       if (i < 5) {
-        diagLog('  char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], bestIdx !== i ? (bestScore > selfScores[i] + margin ? 'SWAP' : 'SKIP') : 'SELF');
+        const tag = bestIdx !== i ? (bestScore > selfScores[i] + margin ? 'SWAP' : 'SKIP') : 'SELF';
+        diagLog('  char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], tag);
       }
       // Also log if "我" (U+6211) is among the keys
       if (keys[i].cp === 0x6211) {
@@ -413,9 +416,20 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
       if (bestIdx !== i && bestScore > threshold && bestScore > selfScores[i] + margin) {
         mapping.set(keys[i].cp, chars[bestIdx]);
       } else if (bestIdx !== i && bestScore > threshold) {
-        skippedCount++;
-        if (skippedCount <= 5) {
-          diagLog('  SKIP char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], 'margin:', (bestScore - selfScores[i]).toFixed(3));
+        // Boundary: use projection profile similarity as tiebreaker
+        const projSelf = projectionSimilarity(customImages[i], refImages[i]);
+        const projBest = projectionSimilarity(customImages[i], refImages[bestIdx]);
+        if (projBest > projSelf + projMargin) {
+          mapping.set(keys[i].cp, chars[bestIdx]);
+          projRescued++;
+          if (projRescued <= 5) {
+            diagLog('  PROJ+ char', i, chars[i], '→', chars[bestIdx], 'pix:', (bestScore - selfScores[i]).toFixed(3), 'proj:', (projBest - projSelf).toFixed(3));
+          }
+        } else {
+          skippedCount++;
+          if (skippedCount <= 5) {
+            diagLog('  SKIP char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], 'pix-mgn:', (bestScore - selfScores[i]).toFixed(3), 'proj-mgn:', (projBest - projSelf).toFixed(3));
+          }
         }
       }
 
@@ -424,7 +438,7 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
       }
     }
 
-    diagLog('  pixel comparison:', mapping.size, 'swaps,', skippedCount, 'skipped (threshold:', threshold + ', margin:', margin + ')');
+    diagLog('  pixel comparison:', mapping.size, 'swaps (', projRescued, 'proj-rescued,', skippedCount, 'skipped, margin:', margin + ', proj-margin:', projMargin + ')');
 
     document.fonts.delete(fontFace);
     return mapping;
@@ -490,6 +504,40 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     }
 
     return matchCount / totalPixels;
+  }
+
+  // Projection profile similarity — robust to slight position shifts.
+  // Collapses 2D image into 1D horizontal + vertical density histograms.
+  function projectionSimilarity(a, b) {
+    const w = a.width, h = a.height;
+    const dataA = a.data, dataB = b.data;
+    let dotA = 0, dotB = 0, dotAB = 0;
+
+    for (let x = 0; x < w; x++) {
+      let colA = 0, colB = 0;
+      for (let y = 0; y < h; y++) {
+        colA += dataA[(y * w + x) * 4 + 3] > 64 ? 1 : 0;
+        colB += dataB[(y * w + x) * 4 + 3] > 64 ? 1 : 0;
+      }
+      dotA += colA * colA;
+      dotB += colB * colB;
+      dotAB += colA * colB;
+    }
+
+    for (let y = 0; y < h; y++) {
+      let rowA = 0, rowB = 0;
+      const base = y * w * 4;
+      for (let x = 0; x < w; x++) {
+        rowA += dataA[base + x * 4 + 3] > 64 ? 1 : 0;
+        rowB += dataB[base + x * 4 + 3] > 64 ? 1 : 0;
+      }
+      dotA += rowA * rowA;
+      dotB += rowB * rowB;
+      dotAB += rowA * rowB;
+    }
+
+    const norm = Math.sqrt(dotA) * Math.sqrt(dotB);
+    return norm > 0 ? dotAB / norm : 0;
   }
 
   // ---- Text Decoding ----
