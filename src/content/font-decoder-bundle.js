@@ -145,9 +145,16 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
 
         // Save parse info for potential pixel comparison fallback
         const cmap = font.tables && font.tables.cmap;
-        const cmapKeys = cmap && cmap.glyphIndexMap
-          ? Object.keys(cmap.glyphIndexMap).map(Number).filter(cp => cp >= 0x4E00 && cp <= 0x9FFF)
-          : [];
+        const getGlyph = glyphGetter(font);
+        const cmapKeys = [];
+        if (cmap && cmap.glyphIndexMap) {
+          for (const [cpStr, gid] of Object.entries(cmap.glyphIndexMap)) {
+            const cp = Number(cpStr);
+            if (cp >= 0x4E00 && cp <= 0x9FFF) {
+              cmapKeys.push({ cp, gid });
+            }
+          }
+        }
         fontParseResults.push({ family, url, buffer, font, glyphCount: numGlyphs, cmapKeys });
         diagLog('  cmap CJK keys:', cmapKeys.length);
 
@@ -311,12 +318,12 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
   // ---- Pixel Comparison Fallback (for glyph-outline-swapped fonts) ----
 
   async function buildPixelMapping(info) {
-    const { buffer, family, cmapKeys } = info;
+    const { buffer, font, cmapKeys } = info;
     const FONT_FAMILY_NAME = 'zhcp-calib-font';
 
     diagLog('buildPixelMapping: registering font via FontFace...');
 
-    // Step 1: Register custom font via FontFace API for Canvas rendering
+    // Step 1: Register custom font via FontFace API (still needed for reference validation)
     let fontFace;
     try {
       fontFace = new FontFace(FONT_FAMILY_NAME, buffer);
@@ -329,58 +336,58 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     await document.fonts.ready;
     diagLog('  font registered, status:', fontFace.status);
 
-    // Step 2: Setup canvas for rendering (larger for better accuracy)
+    // Step 2: Setup canvas
     const canvas = document.createElement('canvas');
     const fontSize = 72;
     canvas.width = 96;
     canvas.height = 96;
     const ctx = canvas.getContext('2d');
 
-    // Characters to compare (limit to 100 max for performance)
-    let keys = cmapKeys.filter(cp => cp >= 0x4E00 && cp <= 0x9FFF);
-    if (keys.length > 100) keys = keys.slice(0, 100);
+    // Limit to 100 chars for performance
+    const keys = cmapKeys.slice(0, 100);
     if (keys.length === 0) {
       document.fonts.delete(fontFace);
       return new Map();
     }
 
-    const chars = keys.map(cp => String.fromCodePoint(cp));
-    diagLog('  comparing', chars.length, 'characters');
+    const chars = keys.map(k => String.fromCodePoint(k.cp));
+    const getGlyph = glyphGetter(font);
+    diagLog('  comparing', chars.length, 'characters (path-based)');
 
-    // Step 3: Render each character in the custom font
+    // Step 3: Render glyph paths for custom font (opentype.js path → Canvas, bypasses font engine)
     const customImages = [];
-    for (let i = 0; i < chars.length; i++) {
-      customImages.push(renderChar(canvas, ctx, chars[i], fontSize, FONT_FAMILY_NAME));
+    for (let i = 0; i < keys.length; i++) {
+      const glyph = getGlyph(keys[i].gid);
+      customImages.push(glyph ? renderGlyphPath(canvas, ctx, glyph, fontSize) : blankImage(canvas, ctx));
     }
 
-    // Step 4: Render each character in PingFang SC (reference)
+    // Step 4: Render reference chars in PingFang SC (text-based)
     const refImages = [];
     for (let i = 0; i < chars.length; i++) {
       refImages.push(renderChar(canvas, ctx, chars[i], fontSize, '"PingFang SC", "Heiti SC", "STHeiti", sans-serif'));
     }
 
-    // Step 5: Cross-compare custom vs reference
-    // First check: are self-matches close to 1.0? If so, the custom font isn't rendering
-    let selfSum = 0;
+    // Step 5: Cross-compare path renderings vs reference
     const selfScores = new Array(chars.length);
+    let selfSum = 0;
     for (let i = 0; i < chars.length; i++) {
       selfScores[i] = pixelSimilarity(customImages[i], refImages[i]);
       selfSum += selfScores[i];
     }
     const avgSelf = selfSum / chars.length;
-    diagLog('  avg self-similarity:', avgSelf.toFixed(3));
+    diagLog('  avg self-similarity (path vs text):', avgSelf.toFixed(3));
 
     if (avgSelf > 0.95) {
-      diagLog('  WARNING: self-matches too high, custom font may not be applied in Canvas');
+      diagLog('  WARNING: self-matches too high, custom font may not be applied');
       document.fonts.delete(fontFace);
       return new Map();
     }
 
-    // Cross-comparison: for each custom glyph, find the best-matching reference glyph
-    // Only treat as a swap if cross-match significantly beats self-match (margin > 0.08)
+    // Cross-comparison with margin check
     const mapping = new Map();
     const threshold = 0.55;
-    const margin = 0.08;
+    const margin = 0.10;
+    let skippedCount = 0;
 
     for (let i = 0; i < chars.length; i++) {
       let bestScore = 0;
@@ -394,31 +401,50 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
         }
       }
 
-      // Diagnostic: log first 5 chars' self-score vs best-score
+      // Diagnostic: first 5 chars
       if (i < 5) {
-        diagLog('  char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestIdx:', bestIdx, 'bestChar:', chars[bestIdx]);
+        diagLog('  char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], bestIdx !== i ? (bestScore > selfScores[i] + margin ? 'SWAP' : 'SKIP') : 'SELF');
       }
       // Also log if "我" (U+6211) is among the keys
-      if (keys[i] === 0x6211) {
-        diagLog('  [我] self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], 'swap:', bestIdx !== i);
+      if (keys[i].cp === 0x6211) {
+        diagLog('  [我] self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], bestIdx !== i && bestScore > selfScores[i] + margin ? 'SWAP' : (bestIdx !== i ? 'SKIP(no-margin)' : 'SELF'));
       }
 
-      // Only treat as swap if cross-match significantly beats self-match
       if (bestIdx !== i && bestScore > threshold && bestScore > selfScores[i] + margin) {
-        mapping.set(keys[i], chars[bestIdx]);
+        mapping.set(keys[i].cp, chars[bestIdx]);
+      } else if (bestIdx !== i && bestScore > threshold) {
+        skippedCount++;
+        if (skippedCount <= 5) {
+          diagLog('  SKIP char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], 'margin:', (bestScore - selfScores[i]).toFixed(3));
+        }
       }
 
-      // Progress every 20 chars
       if ((i + 1) % 20 === 0) {
         diagLog('  compared', i + 1, '/', chars.length, '...');
       }
     }
 
-    diagLog('  pixel comparison found', mapping.size, 'swaps (threshold:', threshold + ', margin:', margin + ')');
+    diagLog('  pixel comparison:', mapping.size, 'swaps,', skippedCount, 'skipped (threshold:', threshold + ', margin:', margin + ')');
 
-    // Clean up
     document.fonts.delete(fontFace);
     return mapping;
+  }
+
+  function blankImage(canvas, ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  function renderGlyphPath(canvas, ctx, glyph, fontSize) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    try {
+      const path = glyph.getPath(0, fontSize * 0.82, fontSize);
+      path.fill = '#000';
+      path.draw(ctx);
+    } catch (e) {
+      // Some glyphs may have no outline
+    }
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
   }
 
   function renderChar(canvas, ctx, ch, fontSize, fontFamily) {
