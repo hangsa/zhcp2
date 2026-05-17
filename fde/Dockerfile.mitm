@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+RUN pip install mitmproxy>=10.0
+
+COPY proxy/ /app/proxy/
+
+WORKDIR /app
+
+EXPOSE 8080
+
+CMD ["mitmdump", "-s", "proxy/interceptor.py", "--set", "block_global=false"]

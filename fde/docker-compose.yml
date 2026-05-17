@@ -1,0 +1,35 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  fde-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DB_PATH=/app/data/reference/db/glyphs.db
+      - FAISS_INDEX=/app/data/reference/db/faiss_index.faiss
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mitmproxy:
+    build:
+      dockerfile: Dockerfile.mitm
+    ports:
+      - "8080:8080"
+    environment:
+      - FDE_API_URL=http://fde-api:8000
+    depends_on:
+      - fde-api
+    restart: unless-stopped

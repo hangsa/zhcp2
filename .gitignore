@@ -1,1 +1,14 @@
 node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.egg-info/
+dist/
+build/
+# FDE generated data
+fde/data/reference/db/
+fde/data/reference/fonts/
+fde/data/samples/
+fde/data/training/
