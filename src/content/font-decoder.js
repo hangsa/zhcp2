@@ -112,6 +112,28 @@
       console.log('[zhcp] font-decoder: font parsed, glyphs:', font.glyphs.length);
 
       // Step 5: Enumerate PUA codepoints
+      // Diagnostic: dump glyph data to understand font structure
+      console.log('[zhcp] font-decoder: --- glyph diagnostic ---');
+      for (let i = 0; i < font.glyphs.length; i++) {
+        const g = font.glyphs[i];
+        console.log('[zhcp] font-decoder: glyph', i,
+          'name:', g.name,
+          'unicode:', g.unicode,
+          'unicodes:', JSON.stringify(g.unicodes),
+          'index:', g.index);
+      }
+      // Also dump cmap table structure
+      const cmap = font.tables && font.tables.cmap;
+      if (cmap) {
+        console.log('[zhcp] font-decoder: cmap keys:', Object.keys(cmap));
+        console.log('[zhcp] font-decoder: cmap glyphIndexMap type:', typeof cmap.glyphIndexMap);
+        if (cmap.glyphIndexMap) {
+          const sampleKeys = Object.keys(cmap.glyphIndexMap).slice(0, 20);
+          console.log('[zhcp] font-decoder: cmap glyphIndexMap sample keys:', sampleKeys);
+        }
+      }
+      console.log('[zhcp] font-decoder: --- end diagnostic ---');
+
       const puaCodepoints = getPUACodepoints(font);
       if (puaCodepoints.length === 0) {
         setError('未检测到编码字符');
