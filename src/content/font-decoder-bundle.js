@@ -329,11 +329,11 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     await document.fonts.ready;
     diagLog('  font registered, status:', fontFace.status);
 
-    // Step 2: Setup canvas for rendering
+    // Step 2: Setup canvas for rendering (larger for better accuracy)
     const canvas = document.createElement('canvas');
-    const fontSize = 48;
-    canvas.width = fontSize;
-    canvas.height = fontSize;
+    const fontSize = 72;
+    canvas.width = 96;
+    canvas.height = 96;
     const ctx = canvas.getContext('2d');
 
     // Characters to compare (limit to 100 max for performance)
@@ -362,8 +362,10 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     // Step 5: Cross-compare custom vs reference
     // First check: are self-matches close to 1.0? If so, the custom font isn't rendering
     let selfSum = 0;
+    const selfScores = new Array(chars.length);
     for (let i = 0; i < chars.length; i++) {
-      selfSum += pixelSimilarity(customImages[i], refImages[i]);
+      selfScores[i] = pixelSimilarity(customImages[i], refImages[i]);
+      selfSum += selfScores[i];
     }
     const avgSelf = selfSum / chars.length;
     diagLog('  avg self-similarity:', avgSelf.toFixed(3));
@@ -375,8 +377,10 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     }
 
     // Cross-comparison: for each custom glyph, find the best-matching reference glyph
+    // Only treat as a swap if cross-match significantly beats self-match (margin > 0.08)
     const mapping = new Map();
     const threshold = 0.55;
+    const margin = 0.08;
 
     for (let i = 0; i < chars.length; i++) {
       let bestScore = 0;
@@ -390,14 +394,17 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
         }
       }
 
-      // Diagnostic: log first 3 chars' self-score vs best-score
-      if (i < 3) {
-        const selfScore = pixelSimilarity(customImages[i], refImages[i]);
-        diagLog('  char', i, chars[i], 'self:', selfScore.toFixed(3), 'best:', bestScore.toFixed(3), 'bestIdx:', bestIdx, 'bestChar:', chars[bestIdx]);
+      // Diagnostic: log first 5 chars' self-score vs best-score
+      if (i < 5) {
+        diagLog('  char', i, chars[i], 'self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestIdx:', bestIdx, 'bestChar:', chars[bestIdx]);
+      }
+      // Also log if "我" (U+6211) is among the keys
+      if (keys[i] === 0x6211) {
+        diagLog('  [我] self:', selfScores[i].toFixed(3), 'best:', bestScore.toFixed(3), 'bestChar:', chars[bestIdx], 'swap:', bestIdx !== i);
       }
 
-      // If the best match is a different character, it's a swap
-      if (bestIdx !== i && bestScore > threshold) {
+      // Only treat as swap if cross-match significantly beats self-match
+      if (bestIdx !== i && bestScore > threshold && bestScore > selfScores[i] + margin) {
         mapping.set(keys[i], chars[bestIdx]);
       }
 
@@ -407,7 +414,7 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
       }
     }
 
-    diagLog('  pixel comparison found', mapping.size, 'swaps (threshold:', threshold + ')');
+    diagLog('  pixel comparison found', mapping.size, 'swaps (threshold:', threshold + ', margin:', margin + ')');
 
     // Clean up
     document.fonts.delete(fontFace);
@@ -418,9 +425,9 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.font = fontSize + 'px ' + fontFamily;
     ctx.fillStyle = '#000';
-    ctx.textBaseline = 'top';
-    ctx.textAlign = 'left';
-    ctx.fillText(ch, 0, 0);
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillText(ch, canvas.width / 2, canvas.height / 2);
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
   }
 
