@@ -438,9 +438,17 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
   function renderGlyphPath(canvas, ctx, glyph, fontSize) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     try {
-      const path = glyph.getPath(0, fontSize * 0.82, fontSize);
-      path.fill = '#000';
-      path.draw(ctx);
+      // Get bounding box to center the glyph on canvas
+      const path = glyph.getPath(0, 0, fontSize);
+      const box = path.getBoundingBox();
+      const gw = box.x2 - box.x1;
+      const gh = box.y2 - box.y1;
+      const cx = (canvas.width - gw) / 2 - box.x1;
+      const cy = (canvas.height - gh) / 2 - box.y1;
+
+      const centered = glyph.getPath(cx, cy, fontSize);
+      centered.fill = '#000';
+      centered.draw(ctx);
     } catch (e) {
       // Some glyphs may have no outline
     }
