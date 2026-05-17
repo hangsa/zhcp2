@@ -49,6 +49,43 @@
   let _initCalled = false;
   let _decodeRate = 0;
 
+  // ---- Diagnostic Overlay (avoids DevTools which triggers Zhihu anti-debug redirect) ----
+
+  let _diagOverlay = null;
+  let _diagLines = [];
+
+  function diagLog(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    _diagLines.push(msg);
+    console.log(msg);
+    updateDiagOverlay();
+  }
+
+  function diagError(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    _diagLines.push('❌ ' + msg);
+    console.error(msg);
+    updateDiagOverlay();
+  }
+
+  function updateDiagOverlay() {
+    if (!_diagOverlay) {
+      _diagOverlay = document.createElement('div');
+      _diagOverlay.id = 'zhcp-diag';
+      _diagOverlay.style.cssText = 'position:fixed;top:0;right:0;width:420px;max-height:100vh;overflow-y:auto;background:rgba(0,0,0,0.88);color:#0f0;font:11px/1.4 monospace;z-index:2147483647;padding:8px;border:1px solid #333;word-break:break-all;';
+      document.body.appendChild(_diagOverlay);
+    }
+    _diagOverlay.textContent = _diagLines.slice(-40).join('\n');
+  }
+
+  function diagDispose() {
+    if (_diagOverlay) {
+      _diagOverlay.remove();
+      _diagOverlay = null;
+    }
+    _diagLines = [];
+  }
+
   // ---- Public API ----
 
   window.ZhihuFontDecoder = {
@@ -68,11 +105,11 @@
     _initCalled = true;
 
     if (!isZhihuPage()) {
-      console.log('[zhcp] font-decoder: not a Zhihu page, skip');
+      diagLog('[zhcp] not a Zhihu page, skip');
       return;
     }
 
-    console.log('[zhcp] font-decoder: detected Zhihu page, starting pipeline');
+    diagLog('[zhcp] detected Zhihu page, starting pipeline');
 
     try {
       // Step 1: Find custom @font-face
@@ -82,7 +119,7 @@
         setError('未找到自定义字体');
         return;
       }
-      console.log('[zhcp] font-decoder: found font:', fontInfo.family, fontInfo.url);
+      diagLog('[zhcp] found font:', fontInfo.family, fontInfo.url);
 
       // Step 2: Download font
       _status = 'downloading';
@@ -91,15 +128,15 @@
         setError('字体下载失败');
         return;
       }
-      console.log('[zhcp] font-decoder: font downloaded, size:', buffer.byteLength);
+      diagLog('[zhcp] font downloaded, size:', buffer.byteLength);
 
       // Step 3: Register font with FontFace API (so Canvas can use it)
       _status = 'registering';
       const registered = await registerFont(fontInfo.family, buffer);
       if (!registered) {
-        console.warn('[zhcp] font-decoder: font registration failed, canvas text may not render');
+        diagLog('[zhcp] WARNING: font registration failed, canvas text may not render');
       } else {
-        console.log('[zhcp] font-decoder: font registered with FontFace API');
+        diagLog('[zhcp] font registered with FontFace API');
       }
 
       // Step 4: Parse font with opentype.js (for glyph data / cmap access)
@@ -109,61 +146,56 @@
         setError('字体解析失败');
         return;
       }
-      console.log('[zhcp] font-decoder: font parsed, glyphs:', font.glyphs.length);
+      diagLog('[zhcp] font parsed');
 
       // Step 5: Deep diagnostic — understand the font's actual structure
-      console.log('[zhcp] font-decoder: --- glyph diagnostic ---');
-      console.log('[zhcp] font-decoder: glyphs type:', typeof font.glyphs, 'isArray:', Array.isArray(font.glyphs));
-      console.log('[zhcp] font-decoder: glyphs.length:', font.glyphs.length);
-      console.log('[zhcp] font-decoder: glyphs.has .get():', typeof font.glyphs.get);
-      // maxp table gives the real glyph count
+      diagLog('=== glyph diagnostic ===');
+      diagLog('glyphs type:', typeof font.glyphs, 'isArray:', Array.isArray(font.glyphs));
+      diagLog('glyphs.length:', font.glyphs.length, 'has .get():', typeof font.glyphs.get);
       const maxp = font.tables && font.tables.maxp;
       const numGlyphs = maxp ? maxp.numGlyphs : 'N/A';
-      console.log('[zhcp] font-decoder: maxp.numGlyphs:', numGlyphs);
-      // Brute-force try .get(0) through .get(20) or numGlyphs
+      diagLog('maxp.numGlyphs:', numGlyphs);
+      // Brute-force try .get(0) through .get(30)
       const tryCount = typeof numGlyphs === 'number' && numGlyphs > 0 ? Math.min(numGlyphs, 30) : 20;
+      let foundGlyphs = 0;
+      let glyphNames = [];
       for (let i = 0; i < tryCount; i++) {
         try {
           const g = typeof font.glyphs.get === 'function' ? font.glyphs.get(i) : font.glyphs[i];
-          if (!g) {
-            console.log('[zhcp] font-decoder: glyph', i, '= null/undefined');
-          } else {
-            console.log('[zhcp] font-decoder: glyph', i,
-              'name:', g.name,
-              'unicode:', g.unicode,
-              'unicodes:', JSON.stringify(g.unicodes));
-          }
-        } catch (e) {
-          console.log('[zhcp] font-decoder: glyph', i, 'error:', e.message);
-        }
+          if (!g) continue;
+          foundGlyphs++;
+          glyphNames.push(i + ':' + g.name + '(u:' + g.unicode + ')');
+        } catch (e) { /* skip */ }
       }
+      diagLog('bruteforce found', foundGlyphs, 'glyphs:', glyphNames.join(', ') || '(none)');
       // cmap: all entries
       const cmap = font.tables && font.tables.cmap;
       if (cmap && cmap.glyphIndexMap) {
         const allEntries = Object.entries(cmap.glyphIndexMap);
-        console.log('[zhcp] font-decoder: cmap total entries:', allEntries.length);
-        console.log('[zhcp] font-decoder: cmap entries:', JSON.stringify(allEntries));
+        diagLog('cmap total entries:', allEntries.length);
+        diagLog('cmap entries:', JSON.stringify(allEntries));
       }
       // Also dump a sample of actual page text from article area
       const articleEl = document.querySelector('article, [role="main"], .Post-content');
       if (articleEl) {
-        const sample = articleEl.innerText.substring(0, 200);
-        console.log('[zhcp] font-decoder: page text sample:', sample);
-        // Show codepoints of first 50 chars
+        const sample = articleEl.innerText.substring(0, 100);
+        diagLog('page text sample:', sample);
         const codes = [];
-        for (const ch of sample.substring(0, 50)) {
-          codes.push(ch + ':' + ch.codePointAt(0).toString(16));
+        for (const ch of sample.substring(0, 30)) {
+          codes.push(ch + '/U+' + ch.codePointAt(0).toString(16));
         }
-        console.log('[zhcp] font-decoder: text codepoints (first 50):', codes.join(' '));
+        diagLog('text codepoints:', codes.join(' '));
+      } else {
+        diagLog('no article element found');
       }
-      console.log('[zhcp] font-decoder: --- end diagnostic ---');
+      diagLog('=== end diagnostic ===');
 
       const puaCodepoints = getPUACodepoints(font);
+      diagLog('PUA codepoints found:', puaCodepoints.length);
       if (puaCodepoints.length === 0) {
         setError('未检测到编码字符');
         return;
       }
-      console.log('[zhcp] font-decoder: PUA codepoints found:', puaCodepoints.length);
 
       // Step 6: Calibrate — build mapping
       _status = 'calibrating';
@@ -172,12 +204,12 @@
         ? _mapping.size / puaCodepoints.length
         : 0;
       _status = 'ready';
-      console.log('[zhcp] font-decoder: calibration done, mapped:',
+      diagLog('calibration done, mapped:',
         _mapping.size, '/', puaCodepoints.length,
         '(' + (_decodeRate * 100).toFixed(1) + '%)');
 
     } catch (err) {
-      console.error('[zhcp] font-decoder: pipeline error:', err);
+      diagError('[zhcp] pipeline error:', err.message || err);
       setError(err.message || '未知错误');
     }
   }
@@ -185,7 +217,7 @@
   function setError(msg) {
     _status = 'error';
     _errorMessage = msg;
-    console.error('[zhcp] font-decoder:', msg);
+    diagError('[zhcp]', msg);
   }
 
   // ---- Detection ----
@@ -245,7 +277,8 @@
     try {
       const response = await fetch(url, { credentials: 'include' });
       if (!response.ok) {
-        console.error('[zhcp] font-decoder: fetch failed, status:', response.status);
+      console.error('[zhcp] font-decoder: fetch failed, status:', response.status);
+        diagError('font download failed, HTTP', response.status);
         return null;
       }
       return await response.arrayBuffer();
