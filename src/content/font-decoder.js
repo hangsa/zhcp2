@@ -146,33 +146,33 @@
 
       if (bestCount === 0) {
         // cmap approach found no swaps → glyph outlines are likely permuted.
-        // Fall back to pixel comparison using the font with the most CJK cmap entries.
-        diagLog('No cmap swaps found, trying pixel comparison fallback...');
+        // Fall back to pixel comparison on ALL fonts to maximize character coverage.
+        diagLog('No cmap swaps found, trying pixel comparison fallback on all fonts...');
         _status = 'calibrating';
 
-        // Find the font with most CJK cmap keys (best for pixel comparison coverage)
-        let biggestInfo = null;
-        let biggestKeys = 0;
-        for (const info of fontParseResults) {
-          if (info.cmapKeys.length > biggestKeys) {
-            biggestKeys = info.cmapKeys.length;
-            biggestInfo = info;
-          }
-        }
-
-        if (!biggestInfo || biggestInfo.cmapKeys.length === 0) {
+        const candidates = fontParseResults.filter(info => info.cmapKeys.length > 0);
+        if (candidates.length === 0) {
           setError('No font suitable for pixel comparison');
           return;
         }
-        diagLog('Using font for pixel comparison:', biggestInfo.family.substring(0, 40), 'with', biggestInfo.cmapKeys.length, 'CJK keys');
 
-        _mapping = await buildPixelMapping(biggestInfo);
+        _mapping = new Map();
+        for (let i = 0; i < candidates.length; i++) {
+          const info = candidates[i];
+          diagLog('Pixel comparing font', i, info.family.substring(0, 40), 'with', info.cmapKeys.length, 'CJK keys');
+          const mapping = await buildPixelMapping(info);
+          diagLog('  font', i, 'produced', mapping.size, 'mappings');
+          for (const [k, v] of mapping) {
+            if (!_mapping.has(k)) _mapping.set(k, v);
+          }
+        }
+
         if (_mapping.size === 0) {
-          setError('Pixel comparison produced no mappings');
+          setError('Pixel comparison produced no mappings across any font');
           return;
         }
         _status = 'ready';
-        diagLog('Pixel mapping done:', _mapping.size, 'mappings');
+        diagLog('Pixel mapping done:', _mapping.size, 'total mappings across', candidates.length, 'fonts');
       } else {
         _mapping = bestMapping;
         _status = 'ready';
