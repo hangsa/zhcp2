@@ -242,11 +242,12 @@
 
   function getPUACodepoints(font) {
     const puaSet = new Set();
-    const cmap = font.tables && font.tables.cmap;
-    if (cmap && cmap.glyphIndexMap) {
-      for (const [codepoint] of cmap.glyphIndexMap) {
-        if (isPUA(codepoint)) {
-          puaSet.add(codepoint);
+    if (!font.glyphs) return [];
+    for (const glyph of font.glyphs) {
+      const unicodes = glyph.unicodes || (glyph.unicode != null ? [glyph.unicode] : []);
+      for (const cp of unicodes) {
+        if (isPUA(cp)) {
+          puaSet.add(cp);
         }
       }
     }
@@ -262,7 +263,7 @@
     const uniPattern = /^uni([0-9A-Fa-f]{4,6})$/;
 
     for (const cp of puaCodepoints) {
-      const glyph = font.glyphs.find(g => g.unicode === cp);
+      const glyph = font.glyphs.find(g => g.unicode === cp || (g.unicodes && g.unicodes.includes(cp)));
       if (!glyph || !glyph.name) continue;
 
       const match = glyph.name.match(uniPattern);
