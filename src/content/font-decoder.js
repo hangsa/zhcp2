@@ -164,13 +164,18 @@
         }
 
         _mapping = new Map();
+        let conflicts = 0;
         for (let i = 0; i < candidates.length; i++) {
           const info = candidates[i];
           diagLog('Pixel comparing font', i, info.family.substring(0, 40), 'with', info.cmapKeys.length, 'CJK keys');
-          const mapping = await buildPixelMapping(info);
-          diagLog('  font', i, 'produced', mapping.size, 'mappings');
-          for (const [k, v] of mapping) {
-            if (!_mapping.has(k)) _mapping.set(k, v);
+          const fontMapping = await buildPixelMapping(info);
+          diagLog('  font', i, 'produced', fontMapping.size, 'mappings');
+          for (const [k, v] of fontMapping) {
+            const existing = _mapping.get(k);
+            if (!existing || v.score > existing.score) {
+              if (existing) conflicts++;
+              _mapping.set(k, v);
+            }
           }
         }
 
@@ -188,11 +193,13 @@
       // Show sample of mappings
       let sample = [];
       let n = 0;
-      for (const [cp, ch] of _mapping) {
+      for (const [cp, v] of _mapping) {
         if (n++ >= 10) break;
+        const ch = typeof v === 'object' ? v.char : v;
         sample.push(String.fromCodePoint(cp) + '→' + ch);
       }
       diagLog('Sample mappings:', sample.join(' '));
+      if (conflicts > 0) diagLog('Cross-font conflicts resolved:', conflicts);
 
     } catch (err) {
       diagError('pipeline error:', err.message || err);
@@ -369,10 +376,11 @@
     }
 
     // Cross-comparison with margin check
+    // Returns Map<codepoint, {char, score}> where score = confidence
     const mapping = new Map();
     const threshold = 0.55;
     const margin = 0.10;
-    const projMargin = 0.04;
+    const projMargin = 0.06;
     let skippedCount = 0;
     let projRescued = 0;
 
@@ -399,13 +407,13 @@
       }
 
       if (bestIdx !== i && bestScore > threshold && bestScore > selfScores[i] + margin) {
-        mapping.set(keys[i].cp, chars[bestIdx]);
+        mapping.set(keys[i].cp, { char: chars[bestIdx], score: bestScore - selfScores[i] });
       } else if (bestIdx !== i && bestScore > threshold) {
         // Boundary: use projection profile similarity as tiebreaker
         const projSelf = projectionSimilarity(customImages[i], refImages[i]);
         const projBest = projectionSimilarity(customImages[i], refImages[bestIdx]);
         if (projBest > projSelf + projMargin) {
-          mapping.set(keys[i].cp, chars[bestIdx]);
+          mapping.set(keys[i].cp, { char: chars[bestIdx], score: projBest - projSelf });
           projRescued++;
           if (projRescued <= 5) {
             diagLog('  PROJ+ char', i, chars[i], '→', chars[bestIdx], 'pix:', (bestScore - selfScores[i]).toFixed(3), 'proj:', (projBest - projSelf).toFixed(3));
@@ -533,8 +541,8 @@
     let result = '';
     for (const ch of text) {
       const cp = ch.codePointAt(0);
-      const mapped = mapping.get(cp);
-      result += mapped || ch;
+      const entry = mapping.get(cp);
+      result += entry ? (typeof entry === 'object' ? entry.char : entry) : ch;
     }
     return result;
   }
