@@ -129,8 +129,17 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
       // Step 5: Enumerate PUA codepoints
       // Diagnostic: dump glyph data to understand font structure
       console.log('[zhcp] font-decoder: --- glyph diagnostic ---');
-      for (let i = 0; i < font.glyphs.length; i++) {
-        const g = font.glyphs[i];
+      console.log('[zhcp] font-decoder: glyphs type:', typeof font.glyphs, 'isArray:', Array.isArray(font.glyphs));
+      const glyphsArray = font.glyphs.glyphs || font.glyphs;
+      const getGlyph = (typeof font.glyphs.get === 'function') ? i => font.glyphs.get(i) : i => font.glyphs[i];
+      const len = glyphsArray.length || 0;
+      console.log('[zhcp] font-decoder: glyphs count:', len, 'has .get():', typeof font.glyphs.get);
+      for (let i = 0; i < len; i++) {
+        const g = getGlyph(i);
+        if (!g) {
+          console.log('[zhcp] font-decoder: glyph', i, 'is undefined/null');
+          continue;
+        }
         console.log('[zhcp] font-decoder: glyph', i,
           'name:', g.name,
           'unicode:', g.unicode,
@@ -143,8 +152,12 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
         console.log('[zhcp] font-decoder: cmap keys:', Object.keys(cmap));
         console.log('[zhcp] font-decoder: cmap glyphIndexMap type:', typeof cmap.glyphIndexMap);
         if (cmap.glyphIndexMap) {
-          const sampleKeys = Object.keys(cmap.glyphIndexMap).slice(0, 20);
-          console.log('[zhcp] font-decoder: cmap glyphIndexMap sample keys:', sampleKeys);
+          if (typeof cmap.glyphIndexMap === 'object' && cmap.glyphIndexMap !== null) {
+            const entries = Object.entries(cmap.glyphIndexMap).slice(0, 20);
+            console.log('[zhcp] font-decoder: cmap glyphIndexMap entries (first 20):', JSON.stringify(entries));
+          } else if (typeof cmap.glyphIndexMap === 'function' || typeof cmap.glyphIndexMap.forEach === 'function') {
+            console.log('[zhcp] font-decoder: cmap glyphIndexMap is iterable');
+          }
         }
       }
       console.log('[zhcp] font-decoder: --- end diagnostic ---');
@@ -267,6 +280,35 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     }
   }
 
+  // ---- Glyph Helper ----
+
+  function getGlyphsArray(font) {
+    // opentype.js: font.glyphs can be GlyphSet (with .get/.length) or array
+    if (!font || !font.glyphs) return [];
+    if (Array.isArray(font.glyphs)) return font.glyphs;
+    // If it has a .glyphs property that IS an array
+    if (Array.isArray(font.glyphs.glyphs)) return font.glyphs.glyphs;
+    // GlyphSet with .get method — build array manually
+    if (typeof font.glyphs.get === 'function' && typeof font.glyphs.length === 'number') {
+      const arr = [];
+      for (let i = 0; i < font.glyphs.length; i++) {
+        const g = font.glyphs.get(i);
+        if (g) arr.push(g);
+      }
+      return arr;
+    }
+    // Last resort: iterate via for...of
+    try {
+      return [...font.glyphs];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function findGlyph(font, predicate) {
+    return getGlyphsArray(font).find(predicate);
+  }
+
   // ---- PUA Enumeration ----
 
   function isPUA(codepoint) {
@@ -279,8 +321,8 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
 
   function getPUACodepoints(font) {
     const puaSet = new Set();
-    if (!font.glyphs) return [];
-    for (const glyph of font.glyphs) {
+    const glyphs = getGlyphsArray(font);
+    for (const glyph of glyphs) {
       const unicodes = glyph.unicodes || (glyph.unicode != null ? [glyph.unicode] : []);
       for (const cp of unicodes) {
         if (isPUA(cp)) {
@@ -300,7 +342,7 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     const uniPattern = /^uni([0-9A-Fa-f]{4,6})$/;
 
     for (const cp of puaCodepoints) {
-      const glyph = font.glyphs.find(g => g.unicode === cp || (g.unicodes && g.unicodes.includes(cp)));
+      const glyph = findGlyph(font, g => g.unicode === cp || (g.unicodes && g.unicodes.includes(cp)));
       if (!glyph || !glyph.name) continue;
 
       const match = glyph.name.match(uniPattern);
@@ -380,7 +422,7 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
 
   function computeGlyphFeatures(font, codepoint) {
     try {
-      const glyph = font.glyphs.find(g => g.unicode === codepoint);
+      const glyph = findGlyph(font, g => g.unicode === codepoint);
       if (!glyph) return null;
 
       const path = glyph.getPath(0, 0, 64);
