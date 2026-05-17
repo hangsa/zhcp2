@@ -78,8 +78,10 @@ Phase 0 (W1-2)     Phase 1 (W3-5)      Phase 2 (W6-8)      Phase 3 (W9-10)     P
 2. **字符集准备（2h）**
    - 生成 GB2312 一级汉字列表（3755 字）作为初始目标
    - 追加 GB2312 二级汉字（3008 字）
+   - 追加 CJK 扩展 A 部分（~500 字，人名/地名用字）
    - 追加常用标点符号（~200 个）
    - 输出 `data/reference/target_chars.txt`（每行一个字符）
+   - 对齐 PRD §5.6 参考字库需求：合计约 7500 字
 
 3. **轮廓 Hash 提取脚本（8h）**
    - 实现 `scripts/build_ref_library.py`：
@@ -206,6 +208,12 @@ Phase 0 (W1-2)     Phase 1 (W3-5)      Phase 2 (W6-8)      Phase 3 (W9-10)     P
    - `docker compose up` 所有服务正常启动
    - `curl http://localhost:8000/health` 返回 200
 
+**合规检查点**（对齐 PRD §9.2）：
+1. 评估知乎服务条款中关于字体文件与内容提取的规定 — Phase 0 启动前
+2. 仅在个人已购买会员内容的范围内使用系统 — 全阶段
+3. 不公开发布可直接运行的完整字体逆向代码 — 代码仓库设为私有
+4. 发现漏洞先向平台方负责任披露，给予 90 天修复期 — 若适用
+
 ---
 
 ## Phase 1：方案 B — 字体逆向引擎（第 3-5 周）
@@ -237,12 +245,19 @@ class GlyphContour:
     coords: list[tuple[float, float, int]]  # (x, y, flag)
     hash: str                                # MD5 hex digest
 
-def extract_raw_coordinates(font, glyph_name: str) -> list[tuple[float, float, int]]:
+def extract_raw_coordinates(
+    font,
+    glyph_name: str,
+    max_depth: int = 10,
+    _visited: set | None = None
+) -> list[tuple[float, float, int]]:
     """
     从 TTFont 的 glyf 表中提取指定字形的所有轮廓点坐标。
-    - 处理 compound glyphs（递归展开子字形引用）
-    - 坐标应用 'glyf' 变换矩阵
+    - 处理 compound glyphs（递归展开子字形引用，最大深度 max_depth）
+    - 循环引用检测：_visited 集合跟踪已访问字形，防止无限递归
+    - 坐标应用 'glyf' 变换矩阵（包括复合字形的平移/缩放/旋转）
     - flag: 0 = off-curve, 1 = on-curve (TrueType convention)
+    - 超过 max_depth 或检测到循环引用时记录 warning，返回已提取的部分坐标
     """
     pass
 
@@ -254,7 +269,9 @@ def normalize_glyph(
     归一化流程：
     1. 计算 x/y 的范围 [min, max]
     2. 线性映射到 [0, 100] 坐标空间
-    3. 按 tolerance 量化：round(value / tolerance) * tolerance
+    3. 量化：round(value / tolerance) * tolerance
+       对齐 PRD §5.3「坐标量化精度：round(value, 1)」—— tolerance=1.0 时二者等价。
+       更粗的 tolerance（如 2.0）可吸收更大的扰动噪声但会降低区分度。
     4. 按 (x, y, flag) 排序，确保序列化顺序稳定
     5. 序列化为字符串，计算 MD5
     """
@@ -313,6 +330,14 @@ class FAISSHashIndex:
         """
         pass
 
+    def brute_force_search(self, vector: np.ndarray) -> tuple[str, float] | None:
+        """
+        FAISS 精确全量搜索（flat L2 index 或 IndexFlatL2 临时搜索）。
+        当 IVF 近似搜索 top-1 距离 ≥ 5.0 时回退使用，避免遗漏正确聚类。
+        比 KNN 慢（O(n) vs O(log n)），仅作为罕见兜底路径。
+        """
+        pass
+
     def batch_match(self, hashes: list[str], vectors: list[np.ndarray],
                     distance_threshold: float = 2.5) -> dict[str, str]:
         """批量匹配：优先精确，fallback 到 KNN（距离 < distance_threshold 即采纳）"""
@@ -346,8 +371,10 @@ class FontReverser:
         从 woff2 字节流构建混淆码点 → 真实字符映射
 
         Returns:
-            {unicode_codepoint: {"char": str, "method": "exact"|"knn", "score": float}}
+            {unicode_codepoint: {"char": str, "method": "exact"|"knn"|"knn_bf", "score": float}}
         """
+        if len(woff2_bytes) > MAX_WOFF2_SIZE:
+            raise ValueError(f"字体文件过大: {len(woff2_bytes)} bytes (max {MAX_WOFF2_SIZE})")
         font = TTFont(BytesIO(woff2_bytes))
         cmap = font.getBestCmap()
 
@@ -371,6 +398,13 @@ class FontReverser:
             if best_dist < KNN_DISTANCE_THRESHOLD:
                 score = distance_to_confidence(best_dist)
                 mapping[codepoint] = {"char": best_char, "method": "knn", "score": score}
+            elif best_dist >= 5.0:
+                # FAISS IVF 近似搜索可能遗漏正确聚类（nprobe 不足）
+                # 回退到精确全量搜索（brute-force flat L2 over all vectors）
+                result = self._index.brute_force_search(vector)
+                if result and result[1] < KNN_DISTANCE_THRESHOLD:
+                    score = distance_to_confidence(result[1])
+                    mapping[codepoint] = {"char": result[0], "method": "knn_bf", "score": score}
 
         return mapping
 ```
@@ -404,6 +438,12 @@ class FontInterceptor:
     2. 拦截 CSS @font-face 中的 woff2 请求
     3. 将页面 HTML 和字体文件一起发送给 FDE Pipeline
     4. 将还原后的文本注入页面响应或返回给插件
+
+    TLS 降级方案（对齐 PRD 风险 #3）：
+    - 首选：mitmproxy 中间人 HTTPS 拦截（需用户安装 CA 证书）
+    - 降级：若证书固定 (cert pinning) 导致拦截失败，回退到浏览器插件方案
+      通过 Chrome Extension 的 webRequest API 直接读取字体响应体
+    - 检测：首次拦截时自动探测目标站点 TLS 指纹，判断是否可拦截
     """
 
     FONT_URL_PATTERN = re.compile(r'\.woff2?\??', re.I)
@@ -414,6 +454,7 @@ class FontInterceptor:
         self._font_cache: dict[str, bytes] = {}       # url → font_bytes
         self._pending_fonts: set[str] = set()          # 待处理的字体 URL
         self._collected_fonts: list[bytes] = []         # 当前页面的字体集合
+        self._tls_interceptable: bool | None = None     # TLS 可拦截性探测
 
     def request(self, flow: http.HTTPFlow):
         """拦截字体请求，缓存 woff2 文件"""
@@ -421,6 +462,14 @@ class FontInterceptor:
 
     def response(self, flow: http.HTTPFlow):
         """拦截页面 HTML 响应，触发 FDE 处理"""
+        pass
+
+    def check_tls_interceptable(self, target_url: str) -> bool:
+        """
+        探测目标站点 TLS 是否可拦截。
+        - 成功 → 启用代理模式
+        - 证书固定 / key pinning → 建议用户切换到浏览器插件模式
+        """
         pass
 ```
 
@@ -484,7 +533,9 @@ class PipelineOrchestrator:
     """
     FDE 流水线调度器。
 
-    决策流程：
+    决策流程（对齐 PRD §5.1 优先级级联）：
+    0. 方案 D（API 直取）—— 若可用则跳过字体处理，直接返回纯文本
+       TODO: Phase 3+ 实现知乎 GraphQL/mobile API 端点探索
     1. 尝试方案 B（FontReverser）→ 精确 Hash + KNN
     2. 未匹配字形 → 方案 C（GlyphClassifier）
     3. 低置信度字形 → 方案 A（OCRFallback）
@@ -503,7 +554,15 @@ class PipelineOrchestrator:
                       html: str,
                       font_bytes: list[bytes],
                       options: dict | None = None) -> DecodeResult:
-        """主入口：处理页面，返回还原文本"""
+        """
+        主入口：处理页面，返回还原文本。
+
+        级联策略：
+        0. 检查方案 D（API 直取）是否可用 → 若命中则零成本返回
+        1. 方案 B 精确 Hash + KNN（主力）
+        2. 方案 C CNN 分类（兜底未匹配字形）
+        3. 方案 A OCR（处理低置信度字形）
+        """
         pass
 ```
 
@@ -646,6 +705,8 @@ class TestGlyphNormalizer:
     def test_different_chars_different_hash(self): ...
     def test_empty_glyph_handled(self): ...
     def test_compound_glyph_extraction(self): ...
+    def test_compound_glyph_max_depth_handled(self): ...
+    def test_compound_glyph_cycle_detection(self): ...
 
 class TestFontReverser:
     def test_clean_font_100_percent_exact_match(self): ...
@@ -659,6 +720,14 @@ class TestFontReverser:
 - `data/tests/noise_level1.woff2`：±1 单位扰动
 - `data/tests/noise_level2.woff2`：±3 单位扰动
 - `data/tests/noise_level3.woff2`：±5 单位扰动
+
+**准确性评测流程**（对齐 PRD §4.1）：
+- 双盲人工标注：从 50+ 篇知乎会员文章中各抽样 20 字，共 1000 字
+- 标注员 A / B 独立判定每个字符的还原正确性
+- 计算 Cohen's Kappa 一致性系数，目标 > 0.9
+- 不一致样本由第三位标注员仲裁
+- 最终准确率 = 一致判定正确的字符数 / 总字符数
+- 形近字专项：单独抽样 200 字形近字对，计算形近字准确率
 
 ### Phase 1 交付清单
 
@@ -984,21 +1053,32 @@ import redis
 import hashlib
 import json
 
+# 字体文件大小上限（防止解压炸弹 / OOM）
+MAX_WOFF2_SIZE = 5 * 1024 * 1024  # 5 MB
+
 class MappingCache:
     """字体 Hash → 映射表缓存"""
 
     def __init__(self, redis_url: str, ttl: int = 3600):
         self._client = redis.from_url(redis_url)
-        self._ttl = ttl  # Session 生命周期内有效
+        self._ttl = ttl  # Session 生命周期内有效（滑动续期）
 
     def _font_hash(self, font_bytes: bytes) -> str:
         """计算字体文件的整体 Hash 作为缓存键"""
+        if len(font_bytes) > MAX_WOFF2_SIZE:
+            raise ValueError(f"字体文件过大: {len(font_bytes)} bytes (max {MAX_WOFF2_SIZE})")
         return hashlib.sha256(font_bytes).hexdigest()[:16]
 
     def get_mapping(self, font_bytes: bytes) -> dict | None:
-        """从缓存读取映射表"""
+        """
+        从缓存读取映射表，命中时续期 TTL（sliding TTL）。
+        字体文件绑定 Session，滑动 TTL 保证活跃 Session 不掉缓存。
+        """
         key = self._font_hash(font_bytes)
-        data = self._client.get(key)
+        pipe = self._client.pipeline()
+        pipe.get(key)
+        pipe.expire(key, self._ttl)  # 滑动续期
+        data, _ = pipe.execute()
         return json.loads(data) if data else None
 
     def set_mapping(self, font_bytes: bytes, mapping: dict):
@@ -1282,12 +1362,14 @@ method_b_exact_rate = Gauge('fde_method_b_exact_rate', 'Method B exact match rat
 
 | 故障场景 | 处理方式 |
 |----------|----------|
+| woff2 文件过大（>5MB） | 拒绝处理，返回错误（防止解压炸弹） |
 | woff2 文件解析失败 | 跳过该字体，记录 warning，尝试其他字体 |
 | FAISS 索引未加载 | 方案 B 跳过，直接走方案 C + A |
 | CNN 模型推理失败 | 方案 C 跳过，扩大方案 A 处理范围 |
 | PaddleOCR 超时 | 标记该字符为 UNKNOWN |
 | Redis 连接失败 | 降级为无缓存模式 |
 | mitmproxy 无法拦截 HTTPS | 提示用户安装 CA 证书 |
+| 目标站点 TLS 证书固定 | 降级为浏览器插件 webRequest API 方案 |
 | 页面无混淆字体 | 直接返回 innerText（无需处理） |
 
 ### Task 5.3：文档完善（3 天）
