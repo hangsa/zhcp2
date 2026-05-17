@@ -126,39 +126,50 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
       }
       console.log('[zhcp] font-decoder: font parsed, glyphs:', font.glyphs.length);
 
-      // Step 5: Enumerate PUA codepoints
-      // Diagnostic: dump glyph data to understand font structure
+      // Step 5: Deep diagnostic — understand the font's actual structure
       console.log('[zhcp] font-decoder: --- glyph diagnostic ---');
       console.log('[zhcp] font-decoder: glyphs type:', typeof font.glyphs, 'isArray:', Array.isArray(font.glyphs));
-      const glyphsArray = font.glyphs.glyphs || font.glyphs;
-      const getGlyph = (typeof font.glyphs.get === 'function') ? i => font.glyphs.get(i) : i => font.glyphs[i];
-      const len = glyphsArray.length || 0;
-      console.log('[zhcp] font-decoder: glyphs count:', len, 'has .get():', typeof font.glyphs.get);
-      for (let i = 0; i < len; i++) {
-        const g = getGlyph(i);
-        if (!g) {
-          console.log('[zhcp] font-decoder: glyph', i, 'is undefined/null');
-          continue;
-        }
-        console.log('[zhcp] font-decoder: glyph', i,
-          'name:', g.name,
-          'unicode:', g.unicode,
-          'unicodes:', JSON.stringify(g.unicodes),
-          'index:', g.index);
-      }
-      // Also dump cmap table structure
-      const cmap = font.tables && font.tables.cmap;
-      if (cmap) {
-        console.log('[zhcp] font-decoder: cmap keys:', Object.keys(cmap));
-        console.log('[zhcp] font-decoder: cmap glyphIndexMap type:', typeof cmap.glyphIndexMap);
-        if (cmap.glyphIndexMap) {
-          if (typeof cmap.glyphIndexMap === 'object' && cmap.glyphIndexMap !== null) {
-            const entries = Object.entries(cmap.glyphIndexMap).slice(0, 20);
-            console.log('[zhcp] font-decoder: cmap glyphIndexMap entries (first 20):', JSON.stringify(entries));
-          } else if (typeof cmap.glyphIndexMap === 'function' || typeof cmap.glyphIndexMap.forEach === 'function') {
-            console.log('[zhcp] font-decoder: cmap glyphIndexMap is iterable');
+      console.log('[zhcp] font-decoder: glyphs.length:', font.glyphs.length);
+      console.log('[zhcp] font-decoder: glyphs.has .get():', typeof font.glyphs.get);
+      // maxp table gives the real glyph count
+      const maxp = font.tables && font.tables.maxp;
+      const numGlyphs = maxp ? maxp.numGlyphs : 'N/A';
+      console.log('[zhcp] font-decoder: maxp.numGlyphs:', numGlyphs);
+      // Brute-force try .get(0) through .get(20) or numGlyphs
+      const tryCount = typeof numGlyphs === 'number' && numGlyphs > 0 ? Math.min(numGlyphs, 30) : 20;
+      for (let i = 0; i < tryCount; i++) {
+        try {
+          const g = typeof font.glyphs.get === 'function' ? font.glyphs.get(i) : font.glyphs[i];
+          if (!g) {
+            console.log('[zhcp] font-decoder: glyph', i, '= null/undefined');
+          } else {
+            console.log('[zhcp] font-decoder: glyph', i,
+              'name:', g.name,
+              'unicode:', g.unicode,
+              'unicodes:', JSON.stringify(g.unicodes));
           }
+        } catch (e) {
+          console.log('[zhcp] font-decoder: glyph', i, 'error:', e.message);
         }
+      }
+      // cmap: all entries
+      const cmap = font.tables && font.tables.cmap;
+      if (cmap && cmap.glyphIndexMap) {
+        const allEntries = Object.entries(cmap.glyphIndexMap);
+        console.log('[zhcp] font-decoder: cmap total entries:', allEntries.length);
+        console.log('[zhcp] font-decoder: cmap entries:', JSON.stringify(allEntries));
+      }
+      // Also dump a sample of actual page text from article area
+      const articleEl = document.querySelector('article, [role="main"], .Post-content');
+      if (articleEl) {
+        const sample = articleEl.innerText.substring(0, 200);
+        console.log('[zhcp] font-decoder: page text sample:', sample);
+        // Show codepoints of first 50 chars
+        const codes = [];
+        for (const ch of sample.substring(0, 50)) {
+          codes.push(ch + ':' + ch.codePointAt(0).toString(16));
+        }
+        console.log('[zhcp] font-decoder: text codepoints (first 50):', codes.join(' '));
       }
       console.log('[zhcp] font-decoder: --- end diagnostic ---');
 
