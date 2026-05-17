@@ -185,6 +185,7 @@
         }
         _status = 'ready';
         diagLog('Pixel mapping done:', _mapping.size, 'total mappings across', candidates.length, 'fonts');
+        if (conflicts > 0) diagLog('Cross-font conflicts resolved:', conflicts);
       } else {
         _mapping = bestMapping;
         _status = 'ready';
@@ -199,7 +200,6 @@
         sample.push(String.fromCodePoint(cp) + '→' + ch);
       }
       diagLog('Sample mappings:', sample.join(' '));
-      if (conflicts > 0) diagLog('Cross-font conflicts resolved:', conflicts);
 
     } catch (err) {
       diagError('pipeline error:', err.message || err);
