@@ -190,19 +190,51 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
         diagLog('cmap total entries:', allEntries.length);
         diagLog('cmap entries:', JSON.stringify(allEntries));
       }
-      // Also dump a sample of actual page text from article area
-      const articleEl = document.querySelector('article, [role="main"], .Post-content');
-      if (articleEl) {
-        const sample = articleEl.innerText.substring(0, 100);
-        diagLog('page text sample:', sample);
+      // Sample page text from various selectors
+      let textSample = '';
+      let sampleSource = '';
+      const textSelectors = [
+        'article', '[role="main"]', '.Post-content', '.RichContent',
+        '.RichText', '.css-1h82fw8', '[class*="content"]', 'main', '#root',
+        '.Question-main', '.AnswerItem', '.Post-Main'
+      ];
+      for (const sel of textSelectors) {
+        const el = document.querySelector(sel);
+        if (el && el.innerText.trim().length > 50) {
+          textSample = el.innerText.trim().substring(0, 200);
+          sampleSource = sel;
+          break;
+        }
+      }
+      if (textSample) {
+        diagLog('page text from', sampleSource + ':', textSample.substring(0, 100));
         const codes = [];
-        for (const ch of sample.substring(0, 30)) {
+        for (const ch of textSample.substring(0, 30)) {
           codes.push(ch + '/U+' + ch.codePointAt(0).toString(16));
         }
-        diagLog('text codepoints:', codes.join(' '));
+        diagLog('codepoints:', codes.join(' '));
+        // Check if any chars are in PUA
+        let puaChars = 0;
+        for (const ch of textSample) {
+          const cp = ch.codePointAt(0);
+          if ((cp >= 0xe000 && cp <= 0xf8ff) || (cp >= 0xf0000 && cp <= 0xffffd)) {
+            puaChars++;
+          }
+        }
+        diagLog('PUA chars in sample:', puaChars, 'of', textSample.length);
       } else {
-        diagLog('no article element found');
+        // Fallback: just sample body text
+        const bodySample = document.body.innerText.substring(0, 200);
+        diagLog('body text sample:', bodySample);
+        const codes = [];
+        for (const ch of bodySample.substring(0, 30)) {
+          codes.push(ch + '/U+' + ch.codePointAt(0).toString(16));
+        }
+        diagLog('body codepoints:', codes.join(' '));
       }
+      // List ALL @font-face families found on page
+      const allFonts = extractAllFontFaces();
+      diagLog('all @font-face on page:', JSON.stringify(allFonts));
       diagLog('=== end diagnostic ===');
 
       const puaCodepoints = getPUACodepoints(font);
@@ -284,6 +316,25 @@ console.log('[zhcp] font-decoder-bundle: opentype.js loaded, window.opentype:', 
     }
 
     return result;
+  }
+
+  function extractAllFontFaces() {
+    const allFonts = [];
+    try {
+      for (const sheet of document.styleSheets) {
+        try {
+          for (const rule of sheet.cssRules || []) {
+            if (rule.type === CSSRule.FONT_FACE_RULE) {
+              const family = rule.style.getPropertyValue('font-family').replace(/["']/g, '').trim();
+              const src = rule.style.getPropertyValue('src');
+              const urlMatch = src ? src.match(/url\(["']?([^"')]+)["']?\)/) : null;
+              allFonts.push({ family, url: urlMatch ? urlMatch[1] : 'none' });
+            }
+          }
+        } catch (e) { continue; }
+      }
+    } catch (e) { /* */ }
+    return allFonts;
   }
 
   // ---- Font Loading & Registration ----
