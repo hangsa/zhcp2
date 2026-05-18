@@ -1,0 +1,28 @@
+{
+  "num_classes": 50,
+  "param_count": 478802,
+  "epochs_trained": 2,
+  "best_epoch": 2,
+  "best_val_acc": 0.04,
+  "test_loss": 3.8916532707214357,
+  "test_acc": 0.02,
+  "train_acc_final": 0.018,
+  "history": {
+    "train_loss": [
+      3.930519248962402,
+      3.9218696002960205
+    ],
+    "train_acc": [
+      0.014,
+      0.018
+    ],
+    "val_loss": [
+      3.9174714851379395,
+      3.8959072113037108
+    ],
+    "val_acc": [
+      0.02,
+      0.04
+    ]
+  }
+}

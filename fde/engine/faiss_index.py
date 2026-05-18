@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Glyph contour search index for font de-obfuscation.
 
 Exact hash lookup (O(1) via SQLite) and exact flat L2 KNN search

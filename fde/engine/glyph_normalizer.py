@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Glyph contour extraction and normalization for font de-obfuscation.
 
 Extracts TrueType glyph coordinates, normalizes them to a canonical [0,100]
