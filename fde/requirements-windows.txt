@@ -1,0 +1,9 @@
+# FDE Windows training requirements
+# Install via setup_windows.ps1 (handles CUDA PyTorch index URL) or manually:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements-windows.txt
+
+fonttools>=4.50
+Pillow>=10.0
+faiss-cpu>=1.7
+numpy>=1.26

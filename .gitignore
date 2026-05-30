@@ -7,8 +7,16 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+Thumbs.db
+Desktop.ini
+
 # FDE generated data
 fde/data/reference/db/
 fde/data/reference/fonts/
+fde/data/reference/temp_download/
 fde/data/samples/
 fde/data/training/
+
+# FDE models (large binaries, managed separately)
+fde/models/*.pt
+fde/models/*.onnx
