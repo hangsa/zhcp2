@@ -75,7 +75,7 @@ class _RandAugment:
         elif op == "shear_x":
             return _F.affine(img, 0, [0, 0], 1, _random.uniform(-0.3 * mag, 0.3 * mag))
         elif op == "shear_y":
-            return _F.affine(img, 0, [0, 0], 1, 0, _random.uniform(-0.3 * mag, 0.3 * mag))
+            return _F.affine(img, 0, [0, 0], 1, [0, _random.uniform(-0.3 * mag, 0.3 * mag)])
         elif op == "brightness":
             return _F.adjust_brightness(img, 1.0 + _random.uniform(-0.3 * mag, 0.3 * mag))
         elif op == "sharpness":
@@ -274,7 +274,7 @@ def train(
         optimizer, warmup_epochs, epochs, len(train_loader))
 
     use_amp = device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler() if use_amp else None
+    scaler = torch.amp.GradScaler("cuda") if use_amp else None
 
     best_val_acc = 0.0
     best_epoch = 0
