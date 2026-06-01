@@ -342,7 +342,7 @@ def train(
     }
 
     metrics_path = output_path.with_suffix(".json")
-    metrics_path.write_text(json.dumps(metrics, indent=2, default=float))
+    metrics_path.write_text(json.dumps(metrics, indent=2, default=float), encoding="utf-8")
 
     logger.info("Training complete. Model saved to %s", output_path)
     logger.info("Metrics saved to %s", metrics_path)

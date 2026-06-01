@@ -166,7 +166,7 @@ def generate_dataset(
     label_map: dict[int, str] = {i: ch for i, ch in enumerate(sorted_chars)}
     label_map_path = output_dir / "label_map.json"
     label_map_path.parent.mkdir(parents=True, exist_ok=True)
-    label_map_path.write_text(json.dumps(label_map, ensure_ascii=False, indent=2))
+    label_map_path.write_text(json.dumps(label_map, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # Split: 85% train, 10% val, 5% test
     rng = random.Random(42)
@@ -202,7 +202,7 @@ def generate_dataset(
         "total_images": sum(split_counts.values()),
     }
     meta_path = output_dir / "meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2))
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     # Cleanup fonts
     for f in fonts:
