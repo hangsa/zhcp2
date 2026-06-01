@@ -187,7 +187,7 @@ def generate_dataset(
             split_dir = output_dir / split_name / str(class_idx)
             split_dir.mkdir(parents=True, exist_ok=True)
             for j, img in enumerate(images[start:end]):
-                img.save(split_dir / f"{j:04d}.png")
+                img.save(str(split_dir / f"{j:04d}.png"))
             split_counts[split_name] += (end - start)
 
     # Write metadata

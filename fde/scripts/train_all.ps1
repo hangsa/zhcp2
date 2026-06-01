@@ -63,7 +63,7 @@ import torch
 print('CUDA_AVAILABLE=' + str(torch.cuda.is_available()))
 if torch.cuda.is_available():
     print('GPU=' + torch.cuda.get_device_name(0))
-    print('MEM_GB=' + str(round(torch.cuda.get_device_properties(0).total_mem / 1024**3, 1)))
+    print('MEM_GB=' + str(round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1)))
     print('DEVICE=cuda')
 else:
     print('DEVICE=cpu')
