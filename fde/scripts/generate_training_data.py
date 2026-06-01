@@ -84,6 +84,8 @@ def _render_char_in_fonts(
     images: list[Image.Image] = []
     for font in fonts:
         cmap = font.getBestCmap()
+        if cmap is None:
+            continue
         cp = ord(char)
         glyph_name = cmap.get(cp)
         if glyph_name is None:
