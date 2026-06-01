@@ -70,10 +70,11 @@ else:
 "@
 Write-Host "  $gpuResult"
 
-if ($gpuResult -match "CUDA_AVAILABLE=True") {
+$gpuStr = $gpuResult -join "`n"
+if ($gpuStr -match "CUDA_AVAILABLE=True") {
     Write-Host "  GPU detected! Training will use GPU acceleration." -ForegroundColor Green
     if (-not $Device) { $Device = "cuda" }
-    if ($gpuResult -match "MEM_GB=([\d.]+)") {
+    if ($gpuStr -match "MEM_GB=([\d.]+)") {
         $gpuMem = [double]$Matches[1]
         if ($gpuMem -lt 6 -and $BatchSize -gt 128) {
             Write-Host "  WARNING: < 6 GB VRAM, reducing batch_size from $BatchSize to 128" -ForegroundColor Yellow
