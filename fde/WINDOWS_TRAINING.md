@@ -91,6 +91,9 @@ powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -SkipDataGen
 
 # 从头开始（清空之前的训练数据）
 powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -CleanStart
+
+# 从检查点恢复训练（Ctrl+C 暂停后继续）
+powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -SkipDataGen -Resume
 ```
 
 #### 训练流程
@@ -99,20 +102,37 @@ powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -CleanStart
 Step 1: 生成训练数据集（~1-2 小时，纯 CPU）
   ├── 读取 data/reference/fonts/ 下所有字体
   ├── 对 target_chars.txt 中每个字符渲染 64×64 灰度图
-  ├── 多字号渲染（48px, 64px）
   ├── 数据增强（旋转/平移/缩放/噪声/亮度）
   └── 输出到 data/training/{train,val,test}/
 
 Step 2: 训练 ViT-Tiny 模型（~2-4 小时，GPU RTX 3060）
   ├── 模型：ViT-Tiny（patch=4, dim=192, depth=12, ~5.7M 参数）
   ├── 输入：64×64 单通道灰度图
-  ├── 分类头：6763 类（GB2312 全量）
+  ├── 分类头：由 label_map.json 决定（GB2312 全量 ~6763 类）
   ├── 优化器：AdamW (lr=3e-4, weight_decay=0.05)
   ├── 调度器：5 epoch warmup + cosine annealing
   ├── 损失函数：CrossEntropy + LabelSmoothing(0.1)
+  ├── 混合精度：自动 AMP (CUDA)
   ├── 早停：validation accuracy 10 epoch 不提升则停止
   └── 输出：models/vit_tiny_gb2312.pt + vit_tiny_gb2312.json
 ```
+
+#### 训练暂停与恢复
+
+训练过程中按 **Ctrl+C** 即可优雅暂停：
+
+```
+按一次 Ctrl+C → 当前 epoch 完成后自动保存检查点到 models/checkpoint.pt → 退出
+按两次 Ctrl+C → 强制退出（检查点可能不完整）
+```
+
+恢复训练：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -SkipDataGen -Resume
+```
+
+检查点包含完整训练状态：模型权重、优化器状态、学习率调度器步数、epoch 进度、最佳指标、随机种子。恢复后训练从下一 epoch 无缝继续。
 
 #### 自定义参数
 
@@ -120,9 +140,30 @@ Step 2: 训练 ViT-Tiny 模型（~2-4 小时，GPU RTX 3060）
 # 自定义 batch size 和 epochs
 powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -BatchSize 512 -Epochs 150
 
-# RTX 3060 (12GB) 可以安全使用 batch_size=256~512
-# 如果显存不足（< 6GB），脚本会自动降低至 128
+# 指定检查点保存路径
+powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -SkipDataGen
+# （Python 端：python scripts/train_classifier.py --checkpoint-path models/my_ckpt.pt）
 ```
+
+#### GPU 显存自动适配
+
+脚本根据检测到的 GPU 显存自动调整 batch_size：
+
+| 显存 | batch_size | gradient checkpointing | 说明 |
+|------|-----------|----------------------|------|
+| < 4 GB | 64 | 开启 | 低端卡/集成显卡 |
+| 4-8 GB | 128 | 开启 | 笔记本 GPU / GTX 1060 等 |
+| 8-12 GB | 256 | 关闭 | RTX 3060 Ti / RTX 3070 等 |
+| 12-16 GB | **384** | 关闭 | **RTX 3060 12GB** — 预计显存占用 ~9-10 GB |
+| ≥ 16 GB | 512 | 关闭 | RTX 3080/4080/4090 等 |
+
+也可手动指定任意 batch_size 覆盖自动检测：
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -BatchSize 256 -SkipDataGen
+```
+
+> **Windows 注意**：`num_workers` 默认为 0（Windows 多进程 DataLoader 会导致死锁）。即使手动指定
+> `-NumWorkers > 0`，Python 端也会自动检测 Windows 环境并强制设为 0。
 
 ### 5. 结果传回 Mac
 
@@ -216,7 +257,13 @@ GitHub 下载可能较慢。可以手动下载：
 
 ### 内存/显存不足 (OOM)
 
-降低 batch size：
+优先使用 GPU 显存自动适配（脚本会自动选择合适 batch_size）。
+
+如需手动降低 batch size：
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -BatchSize 64 -SkipDataGen
 ```
+
+### DataLoader 卡住不动
+
+Windows 上 `num_workers > 0` 会导致 DataLoader 死锁。脚本已默认为 0，Python 端也会自动检测 Windows 并强制清零。确保不要手动指定 `-NumWorkers` 为非零值。
