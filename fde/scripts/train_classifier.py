@@ -74,7 +74,9 @@ def _save_checkpoint(
         },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(checkpoint, str(path))
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    torch.save(checkpoint, str(tmp))
+    tmp.replace(path)
     logger.info("Checkpoint saved to %s (epoch %d)", path, epoch)
 
 
@@ -420,7 +422,7 @@ def train(
                 history, model_config,
             )
             logger.info("Training paused. Resume with: --resume")
-            sys.exit(0)
+            sys.exit(130)
 
     # Load best model for final evaluation
     checkpoint = torch.load(str(output_path), map_location=device, weights_only=True)

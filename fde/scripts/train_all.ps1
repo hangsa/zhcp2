@@ -251,7 +251,12 @@ python $trainArgs
 $trainExit = $LASTEXITCODE
 $sw2.Stop()
 
-if ($trainExit -ne 0) {
+if ($trainExit -eq 130) {
+    Write-Host ""
+    Write-Host "Training paused (checkpoint saved). Resume with:" -ForegroundColor Yellow
+    Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\train_all.ps1 -SkipDataGen -Resume" -ForegroundColor Yellow
+    exit 0
+} elseif ($trainExit -ne 0) {
     Write-Host "ERROR: Training failed with exit code $trainExit" -ForegroundColor Red
     exit $trainExit
 }
