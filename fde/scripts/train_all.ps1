@@ -83,6 +83,12 @@ if ($gpuStr -match "CUDA_AVAILABLE=True") {
         } elseif ($gpuMem -lt 8 -and $BatchSize -gt 128) {
             Write-Host "  WARNING: < 8 GB VRAM, reducing batch_size from $BatchSize to 128" -ForegroundColor Yellow
             $BatchSize = 128
+        } elseif ($gpuMem -ge 16 -and $BatchSize -lt 512) {
+            Write-Host "  >= 16 GB VRAM: increasing batch_size from $BatchSize to 512" -ForegroundColor Green
+            $BatchSize = 512
+        } elseif ($gpuMem -ge 12 -and $BatchSize -lt 384) {
+            Write-Host "  >= 12 GB VRAM: increasing batch_size from $BatchSize to 384" -ForegroundColor Green
+            $BatchSize = 384
         }
         Write-Host "  VRAM: $gpuMem GB, batch_size: $BatchSize" -ForegroundColor Green
     }
