@@ -56,7 +56,7 @@ def _save_checkpoint(
     no_improve: int,
     history: dict,
     model_config: dict,
-):
+) -> None:
     checkpoint = {
         "state_dict": model.state_dict(),
         "optimizer": optimizer.state_dict(),
