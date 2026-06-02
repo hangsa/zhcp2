@@ -21,7 +21,8 @@ param(
     [ValidateRange(1,500)]
     [int]$Epochs = 100,
     [int]$NumWorkers = 2,
-    [string]$Device = ""
+    [string]$Device = "",
+    [switch]$Resume
 )
 
 $ErrorActionPreference = "Stop"
@@ -223,6 +224,11 @@ if ($Device) {
 if ($DryRun) {
     $trainArgs += "--dry-run"
     Write-Host "DRY RUN MODE: 2 epochs, small model" -ForegroundColor Magenta
+}
+
+if ($Resume) {
+    $trainArgs += "--resume"
+    Write-Host "RESUME MODE: Continuing from checkpoint" -ForegroundColor Magenta
 }
 
 Write-Host "Running: python $($trainArgs -join ' ')" -ForegroundColor DarkYellow
