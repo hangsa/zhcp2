@@ -14,6 +14,7 @@ import os
 import sys
 import time
 from pathlib import Path
+import signal
 
 import random as _random
 
@@ -28,6 +29,54 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine.glyph_classifier import ViTTiny
 
 logger = logging.getLogger(__name__)
+
+_interrupted = False
+
+
+def _signal_handler(signum, frame):
+    global _interrupted
+    if _interrupted:
+        logger.warning("Forced exit. Checkpoint may be incomplete.")
+        sys.exit(1)
+    _interrupted = True
+    logger.warning(
+        "Interrupted! Will save checkpoint after current epoch. "
+        "Press Ctrl+C again to force exit."
+    )
+
+
+def _save_checkpoint(
+    path: Path,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: "_WarmupCosineLR",
+    epoch: int,
+    best_val_acc: float,
+    best_epoch: int,
+    no_improve: int,
+    history: dict,
+    model_config: dict,
+):
+    checkpoint = {
+        "state_dict": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler_step": scheduler.current_step,
+        "epoch": epoch,
+        "best_val_acc": best_val_acc,
+        "best_epoch": best_epoch,
+        "no_improve": no_improve,
+        "history": history,
+        "model_config": model_config,
+        "rng_states": {
+            "python": _random.getstate(),
+            "torch": torch.get_rng_state(),
+            "cuda": torch.cuda.get_rng_state() if torch.cuda.is_available() else None,
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(checkpoint, str(path))
+    logger.info("Checkpoint saved to %s (epoch %d)", path, epoch)
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
