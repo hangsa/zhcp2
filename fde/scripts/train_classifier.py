@@ -284,11 +284,18 @@ def train(
     num_workers: int = 0,
     device: torch.device | None = None,
     dry_run: bool = False,
+    resume: str | None = None,
+    checkpoint_path: str | None = None,
 ) -> dict:
     """Train ViT-Tiny classifier. Returns training metrics dict."""
 
+    global _interrupted
+    _interrupted = False
+
     device = device or _detect_device()
     logger.info("Using device: %s", device)
+
+    signal.signal(signal.SIGINT, _signal_handler)
 
     if dry_run:
         epochs = 2
@@ -301,8 +308,29 @@ def train(
     num_classes = num_classes or detected_classes
     logger.info("Training on %d classes", num_classes)
 
-    # Dry-run: use a smaller model variant
-    if dry_run:
+    checkpoint_path = Path(checkpoint_path) if checkpoint_path else (output_path.parent / "checkpoint.pt")
+
+    start_epoch = 1
+    if resume:
+        resume_path = Path(resume)
+        if not resume_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {resume_path}")
+        ckpt = torch.load(str(resume_path), map_location=device, weights_only=True)
+        model_config = ckpt["model_config"]
+        if model_config["num_classes"] != num_classes:
+            raise ValueError(
+                f"Checkpoint num_classes ({model_config['num_classes']}) "
+                f"does not match dataset ({num_classes})"
+            )
+        logger.info("Resuming from %s (epoch %d, best_val_acc=%.4f)",
+                     resume_path, ckpt["epoch"], ckpt["best_val_acc"])
+    else:
+        ckpt = None
+
+    if ckpt:
+        model = ViTTiny(**model_config).to(device)
+        model.load_state_dict(ckpt["state_dict"])
+    elif dry_run:
         model_config = dict(
             num_classes=num_classes, img_size=64, patch_size=4,
             dim=96, depth=4, heads=3, mlp_ratio=4.0, dropout=0.0,
@@ -325,12 +353,29 @@ def train(
     use_amp = device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda") if use_amp else None
 
-    best_val_acc = 0.0
-    best_epoch = 0
-    no_improve = 0
-    history: dict = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+    if ckpt:
+        optimizer.load_state_dict(ckpt["optimizer"])
+        scheduler.current_step = ckpt["scheduler_step"]
+        start_epoch = ckpt["epoch"] + 1
+        best_val_acc = ckpt["best_val_acc"]
+        best_epoch = ckpt["best_epoch"]
+        no_improve = ckpt["no_improve"]
+        history = ckpt["history"]
+        rng = ckpt.get("rng_states", {})
+        if rng.get("python"):
+            _random.setstate(rng["python"])
+        if rng.get("torch"):
+            torch.set_rng_state(rng["torch"])
+        if rng.get("cuda") and torch.cuda.is_available():
+            torch.cuda.set_rng_state(rng["cuda"])
+        logger.info("Resumed from epoch %d", start_epoch - 1)
+    else:
+        best_val_acc = 0.0
+        best_epoch = 0
+        no_improve = 0
+        history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch, epochs + 1):
         start = time.time()
         train_loss, train_acc = _train_epoch(
             model, train_loader, criterion, optimizer, scheduler, device, scaler)
@@ -367,6 +412,16 @@ def train(
                 logger.info("Early stopping at epoch %d (no improvement for %d epochs)",
                             epoch, patience)
                 break
+
+        # Check for interrupt
+        if _interrupted:
+            _save_checkpoint(
+                checkpoint_path, model, optimizer, scheduler,
+                epoch, best_val_acc, best_epoch, no_improve,
+                history, model_config,
+            )
+            logger.info("Training paused. Resume with: --resume")
+            sys.exit(0)
 
     # Load best model for final evaluation
     checkpoint = torch.load(str(output_path), map_location=device, weights_only=True)
