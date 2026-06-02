@@ -86,9 +86,9 @@ if ($gpuStr -match "CUDA_AVAILABLE=True") {
         } elseif ($gpuMem -ge 16 -and $BatchSize -lt 512) {
             Write-Host "  >= 16 GB VRAM: increasing batch_size from $BatchSize to 512" -ForegroundColor Green
             $BatchSize = 512
-        } elseif ($gpuMem -ge 12 -and $BatchSize -lt 320) {
-            Write-Host "  >= 12 GB VRAM: increasing batch_size from $BatchSize to 320" -ForegroundColor Green
-            $BatchSize = 320
+        } elseif ($gpuMem -ge 12 -and $BatchSize -lt 256) {
+            Write-Host "  >= 12 GB VRAM: increasing batch_size from $BatchSize to 256" -ForegroundColor Green
+            $BatchSize = 256
         }
         Write-Host "  VRAM: $gpuMem GB, batch_size: $BatchSize" -ForegroundColor Green
     }
@@ -217,6 +217,9 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  STEP 2/2: Train ViT-Tiny Classifier" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
+
+# Reduce CUDA memory fragmentation (critical for 12GB cards)
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
 
 $trainArgs = @(
     "scripts\train_classifier.py",
