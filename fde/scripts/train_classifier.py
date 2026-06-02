@@ -465,12 +465,19 @@ def main():
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default=None)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resume", nargs="?", const="auto", default=None,
+                        help="Resume from checkpoint (default: models/checkpoint.pt)")
+    parser.add_argument("--checkpoint-path", default=str(REPO_ROOT / "models" / "checkpoint.pt"),
+                        help="Where to save checkpoint on interrupt")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
     device = torch.device(args.device) if args.device else _detect_device()
 
+    resume_path = None
+    if args.resume is not None:
+        resume_path = args.resume if args.resume != "auto" else str(REPO_ROOT / "models" / "checkpoint.pt")
     train(
         data_dir=Path(args.data_dir),
         output_path=Path(args.output),
@@ -483,6 +490,8 @@ def main():
         num_workers=args.num_workers,
         device=device,
         dry_run=args.dry_run,
+        resume=resume_path,
+        checkpoint_path=args.checkpoint_path,
     )
 
 
