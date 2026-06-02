@@ -20,7 +20,7 @@ param(
     [int]$BatchSize = 256,
     [ValidateRange(1,500)]
     [int]$Epochs = 100,
-    [int]$NumWorkers = 2,
+    [int]$NumWorkers = 0,
     [string]$Device = "",
     [switch]$Resume
 )

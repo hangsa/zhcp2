@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import os
 import sys
 import time
 from pathlib import Path
@@ -142,6 +143,10 @@ def create_dataloaders(
 ) -> tuple[DataLoader, DataLoader, DataLoader, int]:
     """Create train/val/test DataLoaders from ImageFolder structure."""
 
+    if os.name == "nt" and num_workers > 0:
+        logger.warning("Windows detected: forcing num_workers from %d to 0 to avoid deadlock", num_workers)
+        num_workers = 0
+
     val_transform = transforms.Compose([
         transforms.Grayscale(num_output_channels=1),
         transforms.ToTensor(),
@@ -231,7 +236,7 @@ def _train_epoch(
         optimizer.zero_grad()
 
         if scaler is not None:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
             scaler.scale(loss).backward()
