@@ -289,15 +289,14 @@ def train(
 ) -> dict:
     """Train ViT-Tiny classifier. Returns training metrics dict."""
 
-    global _interrupted
-    _interrupted = False
-
     device = device or _detect_device()
     logger.info("Using device: %s", device)
 
     signal.signal(signal.SIGINT, _signal_handler)
+    global _interrupted
+    _interrupted = False
 
-    if dry_run:
+    if dry_run and not resume:
         epochs = 2
         batch_size = 32
         logger.info("DRY RUN: 2 epochs, batch_size=32")
