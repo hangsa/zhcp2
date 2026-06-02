@@ -346,8 +346,12 @@ def train(
     else:
         model_config = dict(num_classes=num_classes)
         if device.type == "cuda":
-            model_config["use_checkpoint"] = True
-            logger.info("Gradient checkpointing enabled to reduce VRAM usage")
+            vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            if vram_gb < 8:
+                model_config["use_checkpoint"] = True
+                logger.info("Gradient checkpointing enabled (VRAM: %.1f GB < 8 GB)", vram_gb)
+            else:
+                logger.info("Gradient checkpointing disabled (VRAM: %.1f GB, ample)", vram_gb)
         model = ViTTiny(**model_config)
     model = model.to(device)
 
