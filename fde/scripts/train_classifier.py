@@ -340,6 +340,9 @@ def train(
         logger.info("Dry-run model: dim=96 depth=4 (~0.5M params)")
     else:
         model_config = dict(num_classes=num_classes)
+        if device.type == "cuda":
+            model_config["use_checkpoint"] = True
+            logger.info("Gradient checkpointing enabled to reduce VRAM usage")
         model = ViTTiny(**model_config)
     model = model.to(device)
 

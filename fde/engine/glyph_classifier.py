@@ -33,8 +33,10 @@ logger = logging.getLogger(__name__)
 class TransformerBlock(nn.Module):
     """Pre-LN transformer block with multi-head self-attention and MLP."""
 
-    def __init__(self, dim: int, heads: int, mlp_ratio: float = 4.0, dropout: float = 0.0):
+    def __init__(self, dim: int, heads: int, mlp_ratio: float = 4.0,
+                 dropout: float = 0.0, use_checkpoint: bool = False):
         super().__init__()
+        self.use_checkpoint = use_checkpoint
         self.norm1 = nn.LayerNorm(dim)
         self.attn = nn.MultiheadAttention(dim, heads, dropout=dropout, batch_first=True)
         self.norm2 = nn.LayerNorm(dim)
@@ -46,10 +48,15 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.norm1(x), self.norm1(x), self.norm1(x))[0]
         x = x + self.mlp(self.norm2(x))
         return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.use_checkpoint and self.training:
+            return torch.utils.checkpoint.checkpoint(self._forward, x, use_reentrant=False)
+        return self._forward(x)
 
 
 class ViTTiny(nn.Module):
@@ -76,6 +83,7 @@ class ViTTiny(nn.Module):
         heads: int = 3,
         mlp_ratio: float = 4.0,
         dropout: float = 0.0,
+        use_checkpoint: bool = False,
     ):
         super().__init__()
         self.img_size = img_size
@@ -91,7 +99,7 @@ class ViTTiny(nn.Module):
 
         # Transformer blocks
         self.blocks = nn.ModuleList([
-            TransformerBlock(dim, heads, mlp_ratio, dropout)
+            TransformerBlock(dim, heads, mlp_ratio, dropout, use_checkpoint)
             for _ in range(depth)
         ])
 

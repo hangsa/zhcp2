@@ -77,8 +77,11 @@ if ($gpuStr -match "CUDA_AVAILABLE=True") {
     if (-not $Device) { $Device = "cuda" }
     if ($gpuStr -match "MEM_GB=([\d.]+)") {
         $gpuMem = [double]$Matches[1]
-        if ($gpuMem -lt 6 -and $BatchSize -gt 128) {
-            Write-Host "  WARNING: < 6 GB VRAM, reducing batch_size from $BatchSize to 128" -ForegroundColor Yellow
+        if ($gpuMem -lt 6 -and $BatchSize -gt 64) {
+            Write-Host "  WARNING: < 6 GB VRAM, reducing batch_size from $BatchSize to 64" -ForegroundColor Yellow
+            $BatchSize = 64
+        } elseif ($gpuMem -lt 16 -and $BatchSize -gt 128) {
+            Write-Host "  WARNING: < 16 GB VRAM, reducing batch_size from $BatchSize to 128" -ForegroundColor Yellow
             $BatchSize = 128
         }
     }
