@@ -166,9 +166,27 @@ if ($SkipBuild) {
     Write-Host "  Downloading Python deps: torch, fastapi, uvicorn, faiss..." -ForegroundColor White
     Write-Host ""
 
-    docker compose build
+    docker compose build 2>&1 | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
         Write-Host "ERROR: Docker build failed." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "This is usually caused by inability to reach Docker Hub." -ForegroundColor Yellow
+        Write-Host "If you are in China, configure a registry mirror (镜像加速器):" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  1. Open Docker Desktop -> Settings -> Docker Engine" -ForegroundColor White
+        Write-Host "  2. Add this inside the JSON config:" -ForegroundColor White
+        Write-Host '    "registry-mirrors": [' -ForegroundColor DarkYellow
+        Write-Host '      "https://docker.1ms.run",' -ForegroundColor DarkYellow
+        Write-Host '      "https://docker.xuanyuan.me"' -ForegroundColor DarkYellow
+        Write-Host '    ]' -ForegroundColor DarkYellow
+        Write-Host "  3. Click 'Apply & Restart'" -ForegroundColor White
+        Write-Host "  4. After restart, retry: .\scripts\deploy_windows.ps1 -SkipBuild" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  Other mirrors to try if those fail:" -ForegroundColor DarkGray
+        Write-Host "    https://hub.rat.dev" -ForegroundColor DarkGray
+        Write-Host "    https://docker.chenby.cn" -ForegroundColor DarkGray
+        Write-Host "    https://dhub.uuug.pro" -ForegroundColor DarkGray
         exit $LASTEXITCODE
     }
     Write-Host "  Build complete." -ForegroundColor Green

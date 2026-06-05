@@ -26,6 +26,18 @@
 - 安装完成后启动 Docker Desktop
 - 等待任务栏鲸鱼图标停止动画（表示 Docker 引擎已就绪）
 
+**国内用户**：安装后需立即配置镜像加速器，否则无法拉取镜像：
+
+1. Docker Desktop → Settings → Docker Engine
+2. 在 JSON 配置中添加：
+```json
+"registry-mirrors": [
+  "https://docker.1ms.run",
+  "https://docker.xuanyuan.me"
+]
+```
+3. 点击 Apply & Restart
+
 验证：
 ```powershell
 docker --version
@@ -214,6 +226,37 @@ curl http://localhost:8000/health
 ---
 
 ## 故障排除
+
+### Docker 构建失败：无法连接 Docker Hub（国内用户）
+
+```
+ERROR: Docker build failed.
+failed to resolve source metadata for docker.io/library/python:3.11-slim
+dial tcp ... connectex: A connection attempt failed
+```
+
+**原因**：国内网络无法直接访问 Docker Hub (`registry-1.docker.io`)。
+
+**解决**：配置 Docker 镜像加速器：
+
+1. 打开 Docker Desktop → Settings → Docker Engine
+2. 在 JSON 配置中添加 `registry-mirrors`：
+
+```json
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me"
+  ]
+}
+```
+
+3. 点击 **Apply & Restart**，等待 Docker 重启
+4. 重新部署：`powershell -ExecutionPolicy Bypass -File scripts\deploy_windows.ps1 -SkipBuild`
+
+> **其他可用镜像**：`https://hub.rat.dev`、`https://docker.chenby.cn`、`https://dhub.uuug.pro`
+>
+> 镜像源可能随时失效，如遇问题请搜索"2026 Docker 镜像加速器"获取最新可用地址。
 
 ### Docker 未运行
 
