@@ -40,8 +40,15 @@ Write-Host ""
 
 # ---- Check Docker ----
 Write-Host "[1/4] Checking Docker..." -ForegroundColor Yellow
+
+# Temporarily disable ErrorActionPreference for native-command checks
+# to prevent PowerShell from converting docker stderr to terminating errors
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+
 $dockerVersion = docker --version 2>&1
 if ($LASTEXITCODE -ne 0) {
+    $ErrorActionPreference = $prevEAP
     Write-Host "ERROR: Docker not found. Install Docker Desktop first:" -ForegroundColor Red
     Write-Host "  https://www.docker.com/products/docker-desktop/" -ForegroundColor Yellow
     exit 1
@@ -49,12 +56,14 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  $dockerVersion" -ForegroundColor Green
 
 # Verify Docker is running
-$dockerInfo = docker info 2>&1
+$null = docker info 2>&1
 if ($LASTEXITCODE -ne 0) {
+    $ErrorActionPreference = $prevEAP
     Write-Host "ERROR: Docker is installed but not running." -ForegroundColor Red
     Write-Host "  Start Docker Desktop, wait for the whale icon to stop animating, then retry." -ForegroundColor Yellow
     exit 1
 }
+$ErrorActionPreference = $prevEAP
 Write-Host "  Docker is running." -ForegroundColor Green
 
 # ---- Check prerequisites ----
