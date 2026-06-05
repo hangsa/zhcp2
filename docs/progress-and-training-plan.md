@@ -1,6 +1,6 @@
 # FDE 项目整体进度与训练计划
 
-> 更新日期：2026-06-05 | 分支：`zhextra`
+> 更新日期：2026-06-05 (最新) | 分支：`zhextra`
 
 ## 一、项目概述
 
@@ -70,9 +70,11 @@ Solution B（精确哈希 + KNN） → Solution C（ViT-Tiny CNN） → Solution
 | `scripts/setup_windows.ps1` | 环境安装（venv + CUDA PyTorch + 依赖） |
 | `scripts/download_fonts.ps1` | 自动下载 6 款思源字体 |
 | `scripts/train_all.ps1` | 一键训练（数据生成 + 模型训练） |
+| `scripts/deploy_windows.ps1` | 一键 Docker 部署（数据库构建 + 镜像构建 + 启动） |
 | `scripts/generate_training_data.py` | 训练数据生成 |
 | `scripts/train_classifier.py` | ViT-Tiny 模型训练 |
 | `WINDOWS_TRAINING.md` | Windows 训练完整指南 |
+| `DEPLOY.md` | Windows Docker 部署完整指南 |
 
 #### 训练特性
 
@@ -120,15 +122,16 @@ Solution B（精确哈希 + KNN） → Solution C（ViT-Tiny CNN） → Solution
 类别              文件数   代码行数
 引擎核心            7      1,823
 训练/数据脚本       5      1,990
-Windows 脚本        3        539
+Windows 脚本        4        770
 API 服务            1        197
 代理/拦截           2        313
 测试                4      1,234
+部署文档            1        230
 ─────────────────────────────────
-合计               22      6,096
+合计               24      6,557
 ```
 
-> 较 5 月 18 日 (+7 文件, +1,979 行)
+> 较 5 月 18 日 (+9 文件, +2,440 行)
 
 ---
 
@@ -197,8 +200,9 @@ API 服务            1        197
 |--------|------|----------|------------|
 | ~~P1~~ | ~~模型集成到 Mac API 服务~~ | ✅ 已完成 (2026-06-05) | — |
 | ~~P1~~ | ~~端到端集成测试（Solution B + C）~~ | ✅ 已完成 (2026-06-05) | — |
+| ~~P2~~ | ~~Docker 部署脚本 + 文档~~ | ✅ 已完成 (2026-06-05) | — |
+| P2 | Docker 部署验证（Windows 实机） | GPU 服务器 (RTX 3060) | 1-2 小时 |
 | P2 | 扩充训练字体（提升跨字体泛化） | GPU 资源 | 2-4 小时 |
-| P2 | Docker 部署验证 | GPU 服务器 | 1-2 小时 |
 | P2 | 解决 Mac 端 API 启动问题 | 更多 RAM 或内存优化 | 待评估 |
 
 ### 中期（Phase 3）
