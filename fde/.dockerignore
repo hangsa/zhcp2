@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Dev files
+requirements-dev.txt
+requirements-windows.txt
+WINDOWS_TRAINING.md
+
+# Training artifacts (keep model output)
+models/checkpoint.pt
+models/checkpoint.pt.tmp
+data/training/train/
+data/training/val/
+data/training/test/
+data/training/meta.json
+
+# Scripts not needed at runtime
+scripts/

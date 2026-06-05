@@ -18,6 +18,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - DB_PATH=/app/data/reference/db/glyphs.db
       - FAISS_INDEX=/app/data/reference/db/faiss_index.faiss
+      - CLASSIFIER_MODEL=/app/models/vit_tiny_gb2312.pt
+      - CLASSIFIER_LABEL_MAP=/app/data/training/label_map.json
     depends_on:
       redis:
         condition: service_healthy
