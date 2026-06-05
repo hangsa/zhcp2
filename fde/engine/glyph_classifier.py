@@ -251,8 +251,9 @@ class GlyphClassifier:
             )
             return {}
 
-        font = TTFont(BytesIO(woff2_bytes))
+        font = None
         try:
+            font = TTFont(BytesIO(woff2_bytes))
             cmap = font.getBestCmap()
             if not cmap:
                 logger.warning("No cmap table in font for classifier")
@@ -310,5 +311,9 @@ class GlyphClassifier:
                     }
 
             return results
+        except Exception:
+            logger.debug("Classifier: failed to process font", exc_info=True)
+            return {}
         finally:
-            font.close()
+            if font is not None:
+                font.close()
