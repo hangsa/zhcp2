@@ -159,6 +159,9 @@ Write-Host "  faiss_index.faiss  $faissSizeMB MB" -ForegroundColor Green
 Write-Host ""
 Write-Host "[4/4] Docker Compose..." -ForegroundColor Yellow
 
+# Docker sends build progress to stderr; prevent PowerShell from treating it as errors
+$ErrorActionPreference = "Continue"
+
 if ($SkipBuild) {
     Write-Host "  Skipping build (--SkipBuild)." -ForegroundColor DarkYellow
 } else {
@@ -166,7 +169,7 @@ if ($SkipBuild) {
     Write-Host "  Downloading Python deps: torch, fastapi, uvicorn, faiss..." -ForegroundColor White
     Write-Host ""
 
-    docker compose build 2>&1 | ForEach-Object { Write-Host $_ }
+    docker compose build
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: Docker build failed." -ForegroundColor Red
@@ -193,7 +196,7 @@ if ($SkipBuild) {
 }
 
 # Stop existing containers if any
-docker compose down 2>&1 | Out-Null
+docker compose down 2>$null
 
 Write-Host ""
 Write-Host "  Starting services (redis + fde-api + mitmproxy)..." -ForegroundColor DarkYellow
